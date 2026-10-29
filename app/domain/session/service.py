@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -43,6 +43,38 @@ async def get_conversation(session: AsyncSession, ctx: TenantContext, conversati
     if conversation is None:
         raise NotFoundError("会话不存在或无权访问")
     return conversation
+
+
+async def list_conversations(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    user_id: str | None = None,
+    status: str | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[Conversation], int]:
+    conditions = [Conversation.tenant_id == ctx.tenant_id]
+    if user_id:
+        conditions.append(Conversation.user_id == user_id)
+    if status:
+        conditions.append(Conversation.status == status)
+    if start_at:
+        conditions.append(Conversation.last_message_at >= start_at)
+    if end_at:
+        conditions.append(Conversation.last_message_at <= end_at)
+
+    total = await session.scalar(select(func.count(Conversation.id)).where(*conditions))
+    result = await session.execute(
+        select(Conversation)
+        .where(*conditions)
+        .order_by(Conversation.last_message_at.desc(), Conversation.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return list(result.scalars().all()), int(total or 0)
 
 
 def serialize_conversation(conversation: Conversation) -> dict:

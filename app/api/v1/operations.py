@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -56,6 +58,39 @@ async def purge_trace(payload: PurgeTraceRequest, session: DbSession, ctx: Admin
     from app.workers.retention import purge_trace as purge
 
     return ok(await purge(session, ctx, days=payload.days))
+
+
+@router.get("/admin/sessions")
+async def list_sessions(
+    session: DbSession,
+    ctx: AdminContext,
+    userId: str | None = None,
+    status: str | None = None,
+    startAt: datetime | None = None,
+    endAt: datetime | None = None,
+    page: int = 1,
+    pageSize: int = 20,
+) -> dict:
+    page = max(page, 1)
+    page_size = min(max(pageSize, 1), 100)
+    items, total = await service.list_conversations(
+        session,
+        ctx,
+        user_id=userId,
+        status=status,
+        start_at=startAt,
+        end_at=endAt,
+        page=page,
+        page_size=page_size,
+    )
+    return ok(
+        {
+            "items": [service.serialize_conversation(item) for item in items],
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+        }
+    )
 
 
 @router.get("/admin/metrics/overview")
