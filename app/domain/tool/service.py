@@ -1,11 +1,28 @@
+from dataclasses import replace
+
 import jsonschema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.tenant import TenantContext
+from app.domain.tool import idempotency
 from app.domain.tool.executor import ToolContext, ToolExecutor, ToolResult
-from app.domain.tool.models import ToolDefinition, ToolInvokeLog
+from app.domain.tool.idempotency import build_idempotency_key
+from app.domain.tool.models import ToolDefinition, ToolIdempotencyRecord, ToolInvokeLog
+
+
+async def _load_idempotency_record(
+    session: AsyncSession, ctx: TenantContext, tool_code: str, idempotency_key: str
+) -> ToolIdempotencyRecord | None:
+    result = await session.execute(
+        select(ToolIdempotencyRecord).where(
+            ToolIdempotencyRecord.tenant_id == ctx.tenant_id,
+            ToolIdempotencyRecord.tool_code == tool_code,
+            ToolIdempotencyRecord.idempotency_key == idempotency_key,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 def validate_arguments(schema: dict, arguments: dict) -> None:
@@ -83,7 +100,29 @@ async def invoke_tool(
         raise ValidationError("写操作工具必须经过用户确认后才能执行")
     validate_arguments(tool.input_schema_json, arguments)
 
+    if tool.write_operation and tool.idempotent:
+        key = tool_context.idempotency_key or build_idempotency_key(
+            tool_context.run_id, tool_code, arguments
+        )
+        completed = await idempotency.begin(
+            session, ctx, tool_code=tool_code, idempotency_key=key, arguments=arguments
+        )
+        if completed is not None:
+            return ToolResult(status="SUCCESS", output=completed.response_json or {}, cached=True)
+        tool_context = replace(tool_context, idempotency_key=key)
+
     result = await executor.execute(tool_code=tool_code, arguments=arguments, context=tool_context)
+
+    if tool.write_operation and tool.idempotent:
+        record = await _load_idempotency_record(session, ctx, tool_code, tool_context.idempotency_key or "")
+        if record is not None:
+            if result.ok:
+                await idempotency.complete(session, record, response=result.output)
+            else:
+                await idempotency.fail(
+                    session, ctx, tool_code=tool_code, idempotency_key=tool_context.idempotency_key or ""
+                )
+
     session.add(
         ToolInvokeLog(
             tenant_id=ctx.tenant_id,
