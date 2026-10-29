@@ -27,14 +27,26 @@ async def _load_idempotency_record(
     return result.scalar_one_or_none()
 
 
-def _resolve_executor(tool: ToolDefinition, default: ToolExecutor) -> ToolExecutor:
+async def _resolve_executor(
+    session: AsyncSession, ctx: TenantContext, tool: ToolDefinition, default: ToolExecutor
+) -> ToolExecutor:
     if tool.source_type in {"HTTP", "OPENAPI"} and tool.endpoint:
         from app.integrations.http_tool import HTTPToolExecutor
+        from app.domain.tool.credentials import reveal_credential
 
+        policy = tool.auth_policy_json or {}
+        headers = dict(policy.get("headers") or {})
+        for header_name, credential_name in (policy.get("credential_map") or {}).items():
+            try:
+                headers[header_name] = await reveal_credential(
+                    session, ctx, tool_code=tool.tool_code, name=credential_name
+                )
+            except Exception:  # noqa: BLE001 - 凭证缺失时保持无该头，交由业务返回 401
+                continue
         return HTTPToolExecutor(
             tool.endpoint,
-            method=(tool.auth_policy_json or {}).get("method", "POST"),
-            headers=(tool.auth_policy_json or {}).get("headers") or {},
+            method=policy.get("method", "POST"),
+            headers=headers,
             timeout_ms=tool.timeout_ms,
         )
     return default
@@ -89,6 +101,16 @@ async def create_tool(
     return tool
 
 
+async def find_tool(session: AsyncSession, ctx: TenantContext, tool_code: str) -> ToolDefinition | None:
+    result = await session.execute(
+        select(ToolDefinition)
+        .where(ToolDefinition.tenant_id == ctx.tenant_id, ToolDefinition.tool_code == tool_code)
+        .order_by(ToolDefinition.version_no.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_tool(session: AsyncSession, ctx: TenantContext, tool_code: str) -> ToolDefinition:
     result = await session.execute(
         select(ToolDefinition)
@@ -127,7 +149,7 @@ async def invoke_tool(
     if not argument_check.allowed:
         raise ValidationError(f"工具参数未通过安全检查：{argument_check.reason}")
 
-    executor = _resolve_executor(tool, executor)
+    executor = await _resolve_executor(session, ctx, tool, executor)
 
     limiter_key = f"{ctx.tenant_id}:{tool_code}"
     resilience = get_resilience()

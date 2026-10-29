@@ -34,6 +34,65 @@ class CredentialRequest(BaseModel):
     value: str = Field(min_length=1)
 
 
+class ImportOpenApiRequest(BaseModel):
+    spec: dict = Field(default_factory=dict)
+    base_url: str | None = Field(default=None, max_length=500)
+    auto_register: bool = False
+
+
+@router.post("/import-openapi")
+async def import_openapi(payload: ImportOpenApiRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.integrations.openapi import parse_openapi
+
+    parsed = parse_openapi(payload.spec)
+    if not parsed:
+        return ok({"total": 0, "created": [], "skipped": [], "preview": []})
+
+    created: list[str] = []
+    skipped: list[str] = []
+    if payload.auto_register:
+        for item in parsed:
+            existing = await service.find_tool(session, ctx, item["tool_code"])
+            if existing is not None:
+                skipped.append(item["tool_code"])
+                continue
+            endpoint = item["endpoint"]
+            if payload.base_url:
+                endpoint = payload.base_url.rstrip("/") + endpoint
+            await service.create_tool(
+                session,
+                ctx,
+                tool_code=item["tool_code"],
+                name=item["name"],
+                description=item.get("description"),
+                source_type="OPENAPI",
+                input_schema=item["input_schema"],
+                write_operation=item["write_operation"],
+                endpoint=endpoint,
+                auth_policy={"method": item["method"].upper()},
+            )
+            created.append(item["tool_code"])
+
+    return ok(
+        {
+            "total": len(parsed),
+            "created": created,
+            "skipped": skipped,
+            "preview": [
+                {
+                    "toolCode": item["tool_code"],
+                    "name": item["name"],
+                    "method": item["method"].upper(),
+                    "endpoint": item["endpoint"],
+                    "writeOperation": item["write_operation"],
+                    "inputSchema": item["input_schema"],
+                }
+                for item in parsed
+            ],
+        }
+    )
+
+
 @router.post("/{tool_code}/credentials")
 async def save_credential(
     tool_code: str, payload: CredentialRequest, session: DbSession, ctx: CurrentTenant
