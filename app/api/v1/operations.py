@@ -23,6 +23,13 @@ async def get_run_admin(run_id: str, session: DbSession, ctx: CurrentTenant) -> 
     return ok({"run": run_service.serialize_run(run), "steps": [run_service.serialize_step(s) for s in steps]})
 
 
+@router.get("/admin/metrics/overview")
+async def metrics_overview(session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.evaluation import metrics
+
+    return ok(await metrics.overview(session, ctx))
+
+
 class ConvertBadcaseRequest(BaseModel):
     datasetId: int
     question: str = Field(min_length=1)
