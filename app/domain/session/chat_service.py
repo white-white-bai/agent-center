@@ -242,6 +242,16 @@ async def stream_message(
             "message.end",
             {"runId": run_id, "finishReason": "waiting_user", "messageId": str(assistant_message.id)},
         )
+    elif result.status == "HANDOFF":
+        for chunk in _stream_answer(stream, result.answer):
+            yield chunk
+        assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
+        turn.status = "ANSWERED"
+        conversation.status = "ACTIVE"
+        yield stream.format(
+            "message.end",
+            {"runId": run_id, "finishReason": "handoff", "messageId": str(assistant_message.id)},
+        )
     elif result.status == "INTERRUPTED":
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"

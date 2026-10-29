@@ -29,7 +29,14 @@ class SlotsDecision:
     slots: dict[str, Any] = field(default_factory=dict)
 
 
-Decision = ToolCallDecision | FinalDecision | ClarifyDecision | SlotsDecision
+@dataclass
+class HandoffDecision:
+    to_agent: str
+    reason: str = ""
+    pending_slots: list[str] = field(default_factory=list)
+
+
+Decision = ToolCallDecision | FinalDecision | ClarifyDecision | SlotsDecision | HandoffDecision
 
 
 def parse_decision(content: str) -> Decision:
@@ -57,4 +64,13 @@ def parse_decision(content: str) -> Decision:
         if not isinstance(slots, dict):
             raise ValidationError("槽位决策缺少 slots 对象")
         return SlotsDecision(slots=slots)
+    if decision_type == "handoff":
+        target = payload.get("to")
+        if not target:
+            raise ValidationError("交接决策缺少 to 字段")
+        return HandoffDecision(
+            to_agent=target,
+            reason=payload.get("reason") or "",
+            pending_slots=list(payload.get("pending_slots") or []),
+        )
     raise ValidationError(f"未知的决策类型: {decision_type}")

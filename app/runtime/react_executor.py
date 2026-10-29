@@ -18,6 +18,7 @@ from app.domain.session.slots import SessionState, Slot, merge_slot, next_clarif
 from app.runtime.decisions import (
     ClarifyDecision,
     FinalDecision,
+    HandoffDecision,
     SlotsDecision,
     ToolCallDecision,
     parse_decision,
@@ -32,6 +33,7 @@ SYSTEM_TEMPLATE = """你是{role}。
 2. 最终回答：{{"type":"final","answer":"回答内容"}}
 3. 澄清追问：{{"type":"clarify","question":"追问内容"}}
 4. 记录槽位：{{"type":"slots","slots":{{"槽位名":"值"}}}}
+5. 交接其他 Agent：{{"type":"handoff","to":"目标 Agent 编码","reason":"原因"}}
 可用工具：{tools}
 必填槽位：{required_slots}
 当前会话状态：{session_state}
@@ -163,6 +165,53 @@ class ReActExecutor:
                     break
                 messages.append(ChatMessage(role="user", content="槽位已记录，请继续。"))
                 continue
+            if isinstance(decision, HandoffDecision):
+                from app.domain.session.models import Conversation
+                from app.runtime.handoff import HandoffRequest, validate_and_apply
+
+                conversation = await self.session.get(Conversation, run_ctx.conversation_id)
+                if conversation is None:
+                    raise AppError("会话不存在，无法交接")
+                try:
+                    target_agent, _ = await validate_and_apply(
+                        self.session,
+                        ctx,
+                        conversation,
+                        HandoffRequest(
+                            from_agent=run_ctx.agent_code,
+                            to_agent=decision.to_agent,
+                            reason=decision.reason,
+                            pending_slots=decision.pending_slots,
+                        ),
+                    )
+                except AppError as exc:
+                    await self._record_step(
+                        ctx, run_ctx, step_no, "HANDOFF", f"{decision.to_agent}: {exc.message}", status="FAILED"
+                    )
+                    messages.append(
+                        ChatMessage(role="user", content=f"交接失败：{exc.message}，请继续自行处理或转人工。")
+                    )
+                    continue
+                await self._record_step(
+                    ctx,
+                    run_ctx,
+                    step_no,
+                    "HANDOFF",
+                    f"{run_ctx.agent_code} -> {target_agent.code}: {decision.reason}"[:2000],
+                )
+                await self._emit(
+                    {
+                        "event": "handoff",
+                        "data": {
+                            "from": run_ctx.agent_code,
+                            "to": target_agent.code,
+                            "reason": decision.reason,
+                        },
+                    }
+                )
+                result.status = "HANDOFF"
+                result.answer = f"已为你转接到{target_agent.name}，请继续描述你的需求。"
+                break
             if isinstance(decision, ToolCallDecision):
                 if decision.tool not in run_ctx.allowed_tools:
                     await self._record_step(
