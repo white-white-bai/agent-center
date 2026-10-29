@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 
 import jsonschema
@@ -117,6 +118,14 @@ async def invoke_tool(
     if tool.write_operation and not allow_write:
         raise ValidationError("写操作工具必须经过用户确认后才能执行")
     validate_arguments(tool.input_schema_json, arguments)
+
+    from app.domain.safety.service import get_safety_service
+
+    argument_check = get_safety_service().check_local(
+        json.dumps(arguments, ensure_ascii=False), "tool_arguments"
+    )
+    if not argument_check.allowed:
+        raise ValidationError(f"工具参数未通过安全检查：{argument_check.reason}")
 
     executor = _resolve_executor(tool, executor)
 

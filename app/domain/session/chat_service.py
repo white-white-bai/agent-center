@@ -101,6 +101,20 @@ async def find_duplicate_reply(
 async def stream_message(
     session: AsyncSession,
     ctx: TenantContext,
+    **kwargs,
+) -> AsyncIterator[str]:
+    """同一会话串行处理，避免并发写会话状态与 Run。"""
+    from app.runtime.locks import conversation_lock_key, conversation_locks
+
+    conversation: Conversation = kwargs["conversation"]
+    async with conversation_locks.acquire(conversation_lock_key(ctx.tenant_id, conversation.id)):
+        async for chunk in _stream_message_locked(session, ctx, **kwargs):
+            yield chunk
+
+
+async def _stream_message_locked(
+    session: AsyncSession,
+    ctx: TenantContext,
     *,
     conversation: Conversation,
     text: str,
