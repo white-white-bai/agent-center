@@ -301,6 +301,23 @@ async def stream_message(
             "message.end",
             {"runId": run_id, "finishReason": "handoff", "messageId": str(assistant_message.id)},
         )
+    elif result.status == "WAITING_CONFIRM":
+        async for chunk in _answer_events(stream, result.confirmation_summary, emit):
+            yield chunk
+        assistant_message = await _save_assistant(
+            session, ctx, conversation, turn, result.confirmation_summary
+        )
+        turn.status = "AWAITING_CONFIRMATION"
+        conversation.status = "WAITING_CONFIRM"
+        yield await emit(
+            "message.end",
+            {
+                "runId": run_id,
+                "finishReason": "waiting_confirm",
+                "confirmationId": result.confirmation_id,
+                "messageId": str(assistant_message.id),
+            },
+        )
     elif result.status == "INTERRUPTED":
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"

@@ -134,6 +134,7 @@ class ReActExecutor:
             await self._record_step(ctx, run_ctx, step_no, "MODEL_RESPONSE", response.content[:2000])
             await self._emit({"event": "thinking", "data": {"step": step_no, "summary": "模型已完成本轮推理"}})
 
+            await self._save_checkpoint(run_ctx, step_no, result)
             decision = parse_decision(response.content)
             if isinstance(decision, FinalDecision):
                 await self._record_step(ctx, run_ctx, step_no, "FINAL_RESPONSE", decision.answer[:2000])
@@ -222,6 +223,37 @@ class ReActExecutor:
                     )
                     continue
                 await self._emit({"event": "tool.call", "data": {"toolCode": decision.tool, "arguments": decision.arguments}})
+                tool_definition = await self._get_tool(ctx, decision.tool)
+                if tool_definition is not None and tool_definition.write_operation:
+                    from app.domain.tool.confirmation import create_confirmation
+
+                    summary = self._confirmation_summary(tool_definition.name, decision.arguments)
+                    confirmation = await create_confirmation(
+                        self.session,
+                        ctx,
+                        run_id=run_ctx.run_id,
+                        conversation_id=run_ctx.conversation_id,
+                        tool_code=decision.tool,
+                        arguments=decision.arguments,
+                        summary=summary,
+                    )
+                    await self._record_step(
+                        ctx, run_ctx, step_no, "STATE_TRANSITION", f"等待确认: {confirmation.confirmation_id}"
+                    )
+                    await self._emit(
+                        {
+                            "event": "confirmation.required",
+                            "data": {
+                                "confirmationId": confirmation.confirmation_id,
+                                "toolCode": decision.tool,
+                                "summary": summary,
+                            },
+                        }
+                    )
+                    result.status = "WAITING_CONFIRM"
+                    result.confirmation_id = confirmation.confirmation_id
+                    result.confirmation_summary = summary
+                    break
                 try:
                     tool_result = await invoke_tool(
                         self.session,
@@ -283,6 +315,41 @@ class ReActExecutor:
         result.steps = step_no
         await self._finish(ctx, run_ctx, result)
         return result
+
+    async def _get_tool(self, ctx: TenantContext, tool_code: str):
+        from app.domain.tool.service import get_tool
+
+        try:
+            return await get_tool(self.session, ctx, tool_code)
+        except AppError:
+            return None
+
+    @staticmethod
+    def _confirmation_summary(tool_name: str, arguments: dict) -> str:
+        detail = json.dumps(arguments, ensure_ascii=False)[:300]
+        return f"将执行「{tool_name}」，参数：{detail}"
+
+    async def _save_checkpoint(self, run_ctx: RunContext, step_no: int, result: RuntimeResult) -> None:
+        from app.domain.session.models import RunCheckpoint
+
+        self.session.add(
+            RunCheckpoint(
+                tenant_id=run_ctx.tenant_id,
+                run_id=run_ctx.run_id,
+                checkpoint_version=step_no,
+                step_no=step_no,
+                state_json={
+                    "stepNo": step_no,
+                    "tokenUsage": {
+                        "input": result.token_input,
+                        "output": result.token_output,
+                    },
+                    "toolCalls": result.tool_calls,
+                    "agentCode": run_ctx.agent_code,
+                },
+            )
+        )
+        await self.session.commit()
 
     async def _load_state(self, run_ctx: RunContext) -> SessionState:
         from app.domain.session.models import Conversation

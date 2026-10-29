@@ -118,7 +118,7 @@ async def decide_confirmation(
     session: DbSession,
     ctx: CurrentTenant,
 ) -> dict:
-    await service.get_conversation(session, ctx, session_id)
+    conversation = await service.get_conversation(session, ctx, session_id)
     record, executable = await confirmation.decide(
         session,
         ctx,
@@ -126,11 +126,39 @@ async def decide_confirmation(
         decision=payload.decision,
         arguments=payload.arguments,
     )
+    execution = None
+    if executable:
+        from app.domain.tool.executor import ToolContext, function_tool_executor
+        from app.domain.tool.service import invoke_tool
+
+        tool_result = await invoke_tool(
+            session,
+            ctx,
+            function_tool_executor,
+            tool_code=record.tool_code,
+            arguments=record.arguments_json,
+            tool_context=ToolContext(
+                tenant_id=ctx.tenant_id,
+                user_id=ctx.user_id,
+                conversation_id=session_id,
+                run_id=record.run_id,
+            ),
+            allow_write=True,
+        )
+        execution = {
+            "status": tool_result.status,
+            "output": tool_result.output,
+            "errorCode": tool_result.error_code,
+            "cached": tool_result.cached,
+        }
+        conversation.status = "ACTIVE"
+        await session.commit()
     return ok(
         {
             "confirmationId": record.confirmation_id,
             "status": record.status,
             "executable": executable,
             "toolCode": record.tool_code,
+            "execution": execution,
         }
     )

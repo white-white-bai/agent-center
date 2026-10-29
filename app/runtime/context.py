@@ -31,3 +31,5 @@ class RuntimeResult:
     token_input: int = 0
     token_output: int = 0
     error_code: str | None = None
+    confirmation_id: str | None = None
+    confirmation_summary: str = ""
