@@ -61,7 +61,9 @@ async def send_message(
     duplicate = await chat_service.find_duplicate_reply(
         session, ctx, conversation, payload.clientMessageId
     )
-    agent, version = await chat_service.resolve_agent(session, ctx, conversation, payload.agentCode)
+    agent, version = await chat_service.resolve_agent(
+        session, ctx, conversation, payload.agentCode, payload.message
+    )
     stream = chat_service.stream_message(
         session,
         ctx,

@@ -26,6 +26,9 @@ class CreateVersionRequest(BaseModel):
     fallback: dict = Field(default_factory=dict)
     tools: list[str] = Field(default_factory=list)
     knowledge_scopes: list[str] = Field(default_factory=list)
+    router_rules: dict = Field(default_factory=dict)
+    required_slots: list[str] = Field(default_factory=list)
+    slot_questions: dict = Field(default_factory=dict)
 
 
 class PublishRequest(BaseModel):
@@ -88,6 +91,9 @@ async def create_version(
         "constraints": payload.constraints,
         "memory_policy": payload.memory_policy,
         "fallback": payload.fallback,
+        "router_rules": payload.router_rules,
+        "required_slots": payload.required_slots,
+        "slot_questions": payload.slot_questions,
     }
     version = await service.create_version(
         session,

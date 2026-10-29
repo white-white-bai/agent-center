@@ -61,17 +61,33 @@ async def _find_duplicate(
     return await session.get(Message, turn.assistant_message_id)
 
 
-async def resolve_agent(session: AsyncSession, ctx: TenantContext, conversation: Conversation, agent_code: str | None):
+async def resolve_agent(
+    session: AsyncSession,
+    ctx: TenantContext,
+    conversation: Conversation,
+    agent_code: str | None,
+    message: str = "",
+):
     if conversation.status not in {"ACTIVE", "WAITING_USER", "WAITING_CONFIRM"}:
         raise ConflictError(f"当前会话状态不允许发送消息: {conversation.status}")
 
     resolved_code = agent_code or conversation.current_agent_code
     if resolved_code:
         return await get_published_version(session, ctx, resolved_code)
-    resolved = await _first_published_agent(session, ctx)
-    if resolved is None:
-        raise ConflictError("租户下没有已发布的 Agent，无法处理消息")
-    return resolved
+
+    from app.runtime.supervisor import route
+
+    metadata = (conversation.session_state_json or {}).get("metadata") or {}
+    result = await route(
+        session,
+        ctx,
+        message=message,
+        channel=conversation.channel,
+        region=metadata.get("region_code"),
+    )
+    if result.selected_agent is None or result.need_clarification:
+        raise ConflictError("无法确定由哪个 Agent 处理，请补充业务领域或指定 agentCode")
+    return await get_published_version(session, ctx, result.selected_agent)
 
 
 async def find_duplicate_reply(

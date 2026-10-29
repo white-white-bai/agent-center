@@ -1,0 +1,22 @@
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
+from app.api.deps import CurrentTenant, DbSession
+from app.core.responses import ok
+from app.runtime import supervisor
+
+router = APIRouter(prefix="/admin", tags=["routing"])
+
+
+class RoutePreviewRequest(BaseModel):
+    message: str = Field(min_length=1)
+    channel: str | None = None
+    region: str | None = None
+
+
+@router.post("/route-preview")
+async def route_preview(payload: RoutePreviewRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    result = await supervisor.route(
+        session, ctx, message=payload.message, channel=payload.channel, region=payload.region
+    )
+    return ok(result.to_dict())
