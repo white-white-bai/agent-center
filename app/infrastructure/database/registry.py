@@ -6,6 +6,7 @@ from app.domain.model import models as model_models  # noqa: F401
 from app.domain.notification import models as notification_models  # noqa: F401
 from app.domain.profile import models as profile_models  # noqa: F401
 from app.domain.prompt import models as prompt_models  # noqa: F401
+from app.domain.session import events as session_events  # noqa: F401
 from app.domain.session import models as session_models  # noqa: F401
 from app.domain.tool import models as tool_models  # noqa: F401
 from app.infrastructure.database.base import Base

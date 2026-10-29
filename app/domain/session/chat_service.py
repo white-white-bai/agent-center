@@ -176,7 +176,14 @@ async def stream_message(
     await session.commit()
 
     stream = _EventStream(run_id)
-    yield stream.format("run.start", {"runId": run_id, "agentCode": agent.code, "traceId": trace_id})
+    event_buffer: list[dict] = []
+
+    async def emit(event: str, data: dict) -> str:
+        text = stream.format(event, data)
+        event_buffer.append({"seq": stream.seq, "event": event, "data": data})
+        return text
+
+    yield await emit("run.start", {"runId": run_id, "agentCode": agent.code, "traceId": trace_id})
 
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
@@ -225,7 +232,7 @@ async def stream_message(
                 continue
             if event is None:
                 break
-            yield stream.format(event["event"], event["data"])
+            yield await emit(event["event"], event["data"])
 
         result: RuntimeResult = await task
     finally:
@@ -235,12 +242,12 @@ async def stream_message(
         output_check = await safety.check(result.answer, "output")
         if not output_check.allowed:
             result.answer = REFUSAL_MESSAGE
-        for chunk in _stream_answer(stream, result.answer):
+        async for chunk in _answer_events(stream, result.answer, emit):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
         if knowledge_results:
             for item in knowledge_results:
-                yield stream.format(
+                yield await emit(
                     "citation",
                     {
                         "runId": run_id,
@@ -265,7 +272,7 @@ async def stream_message(
                 pass
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"
-        yield stream.format(
+        yield await emit(
             "message.end",
             {
                 "runId": run_id,
@@ -275,40 +282,57 @@ async def stream_message(
             },
         )
     elif result.status == "WAITING_USER":
-        for chunk in _stream_answer(stream, result.question):
+        async for chunk in _answer_events(stream, result.question, emit):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.question)
         turn.status = "AWAITING_CLARIFICATION"
         conversation.status = "WAITING_USER"
-        yield stream.format(
+        yield await emit(
             "message.end",
             {"runId": run_id, "finishReason": "waiting_user", "messageId": str(assistant_message.id)},
         )
     elif result.status == "HANDOFF":
-        for chunk in _stream_answer(stream, result.answer):
+        async for chunk in _answer_events(stream, result.answer, emit):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"
-        yield stream.format(
+        yield await emit(
             "message.end",
             {"runId": run_id, "finishReason": "handoff", "messageId": str(assistant_message.id)},
         )
     elif result.status == "INTERRUPTED":
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"
-        yield stream.format("message.end", {"runId": run_id, "finishReason": "interrupted"})
+        yield await emit("message.end", {"runId": run_id, "finishReason": "interrupted"})
     else:
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"
-        yield stream.format(
+        yield await emit(
             "error",
             {"runId": run_id, "code": result.error_code or "AC.RUN.FAILED", "message": "本轮执行未能完成"},
         )
-        yield stream.format("message.end", {"runId": run_id, "finishReason": "failed"})
+        yield await emit("message.end", {"runId": run_id, "finishReason": "failed"})
 
     turn.ended_at = datetime.utcnow()
     await session.commit()
+
+    if event_buffer:
+        from app.domain.session.events import RunEvent
+
+        session.add_all(
+            [
+                RunEvent(
+                    tenant_id=ctx.tenant_id,
+                    run_id=run_id,
+                    seq=item["seq"],
+                    event=item["event"],
+                    data_json=item["data"],
+                )
+                for item in event_buffer
+            ]
+        )
+        await session.commit()
 
     try:
         from app.domain.session.summarizer import should_compress, summarize_conversation
@@ -319,11 +343,19 @@ async def stream_message(
         pass
 
 
-def _stream_answer(stream: _EventStream, answer: str) -> AsyncIterator[str]:
+async def _answer_events(
+    stream: _EventStream,
+    answer: str,
+    emit,
+) -> AsyncIterator[str]:
     for index in range(0, len(answer), ANSWER_CHUNK_SIZE):
-        yield stream.format(
+        yield await emit(
             "message.delta",
-            {"runId": stream.run_id, "seq": stream.seq + 1, "content": answer[index : index + ANSWER_CHUNK_SIZE]},
+            {
+                "runId": stream.run_id,
+                "seq": stream.seq + 1,
+                "content": answer[index : index + ANSWER_CHUNK_SIZE],
+            },
         )
 
 

@@ -23,6 +23,29 @@ async def get_run_admin(run_id: str, session: DbSession, ctx: AdminContext) -> d
     return ok({"run": run_service.serialize_run(run), "steps": [run_service.serialize_step(s) for s in steps]})
 
 
+@router.get("/chat/sessions/{session_id}/runs/{run_id}/events")
+async def replay_run_events(
+    session_id: int,
+    run_id: str,
+    session: DbSession,
+    ctx: CurrentTenant,
+    lastEventId: str | None = None,
+    limit: int = 500,
+) -> dict:
+    from app.domain.session import event_service
+
+    await service.get_conversation(session, ctx, session_id)
+    await run_service.get_run(session, ctx, run_id, conversation_id=session_id)
+    events = await event_service.list_events(
+        session,
+        ctx,
+        run_id,
+        after_seq=event_service.parse_last_event_id(lastEventId),
+        limit=limit,
+    )
+    return ok([event_service.serialize_event(event) for event in events])
+
+
 @router.get("/admin/metrics/overview")
 async def metrics_overview(session: DbSession, ctx: AdminContext) -> dict:
     from app.domain.evaluation import metrics
