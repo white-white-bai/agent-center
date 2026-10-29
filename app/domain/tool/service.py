@@ -26,6 +26,19 @@ async def _load_idempotency_record(
     return result.scalar_one_or_none()
 
 
+def _resolve_executor(tool: ToolDefinition, default: ToolExecutor) -> ToolExecutor:
+    if tool.source_type in {"HTTP", "OPENAPI"} and tool.endpoint:
+        from app.integrations.http_tool import HTTPToolExecutor
+
+        return HTTPToolExecutor(
+            tool.endpoint,
+            method=(tool.auth_policy_json or {}).get("method", "POST"),
+            headers=(tool.auth_policy_json or {}).get("headers") or {},
+            timeout_ms=tool.timeout_ms,
+        )
+    return default
+
+
 def validate_arguments(schema: dict, arguments: dict) -> None:
     if not schema:
         return
@@ -51,6 +64,7 @@ async def create_tool(
     idempotent: bool = False,
     endpoint: str | None = None,
     rate_limit_policy: dict | None = None,
+    auth_policy: dict | None = None,
 ) -> ToolDefinition:
     tool = ToolDefinition(
         tenant_id=ctx.tenant_id,
@@ -62,6 +76,7 @@ async def create_tool(
         input_schema_json=input_schema,
         output_schema_json=output_schema or {},
         timeout_ms=timeout_ms,
+        auth_policy_json=auth_policy or {},
         rate_limit_policy_json=rate_limit_policy or {},
         write_operation=write_operation,
         require_confirmation=require_confirmation or write_operation,
@@ -102,6 +117,8 @@ async def invoke_tool(
     if tool.write_operation and not allow_write:
         raise ValidationError("写操作工具必须经过用户确认后才能执行")
     validate_arguments(tool.input_schema_json, arguments)
+
+    executor = _resolve_executor(tool, executor)
 
     limiter_key = f"{ctx.tenant_id}:{tool_code}"
     rate_limiter.check(

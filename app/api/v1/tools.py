@@ -20,6 +20,8 @@ class CreateToolRequest(BaseModel):
     write_operation: bool = False
     idempotent: bool = False
     rate_limit_policy: dict = Field(default_factory=dict)
+    headers: dict = Field(default_factory=dict)
+    method: str = Field(default="POST", max_length=10)
 
 
 class TestToolRequest(BaseModel):
@@ -58,6 +60,7 @@ async def create_tool(payload: CreateToolRequest, session: DbSession, ctx: Curre
         idempotent=payload.idempotent,
         endpoint=payload.endpoint,
         rate_limit_policy=payload.rate_limit_policy,
+        auth_policy={"method": payload.method.upper(), "headers": payload.headers},
     )
     return ok(_serialize_tool(tool))
 
