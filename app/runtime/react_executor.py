@@ -66,8 +66,11 @@ class ReActExecutor:
 
         result = RuntimeResult(run_id=run_ctx.run_id, status="RUNNING")
         started = time.monotonic()
+        system_prompt = run_ctx.system_prompt or build_system_prompt(
+            run_ctx.agent_config, run_ctx.allowed_tools
+        )
         messages = [
-            ChatMessage(role="system", content=build_system_prompt(run_ctx.agent_config, run_ctx.allowed_tools)),
+            ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=run_ctx.user_message),
         ]
         model_policy = run_ctx.model_policy or {}

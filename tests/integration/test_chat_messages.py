@@ -14,9 +14,11 @@ class ScriptedClient:
     def __init__(self, replies: list[str]) -> None:
         self.replies = list(replies)
         self.calls = 0
+        self.requests = []
 
     async def complete(self, request):
         self.calls += 1
+        self.requests.append(request)
         return LLMResponse(content=self.replies.pop(0), model=request.model, token_input=5, token_output=5)
 
     async def stream(self, request):
@@ -125,6 +127,37 @@ async def test_duplicate_client_message_id_replays_answer(async_client) -> None:
     answer = "".join(data["content"] for name, data in events if name == "message.delta")
     assert answer == "第一次回答"
     assert first.status_code == 200
+
+
+async def test_context_includes_profile_memory_and_state(async_client) -> None:
+    await _prepare_agent(async_client)
+    scripted = ScriptedClient(['{"type":"final","answer":"好的"}'])
+    _override_router(scripted)
+
+    await async_client.post(
+        "/api/v1/profile/tags",
+        json={"tags": [{"key": "回答风格", "value": "简洁"}]},
+        headers=HEADERS,
+    )
+    await async_client.post(
+        "/api/v1/memory",
+        json={"subject": "所在区域", "predicate": "lives_in", "value": "常州天宁区"},
+        headers=HEADERS,
+    )
+    session_id = (
+        await async_client.post("/api/v1/chat/sessions", json={"channel": "web"}, headers=HEADERS)
+    ).json()["data"]["sessionId"]
+
+    await async_client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"message": "天宁区营业执照怎么办理"},
+        headers=HEADERS,
+    )
+
+    system_prompt = scripted.requests[0].messages[0].content
+    assert "回答风格：简洁" in system_prompt
+    assert "常州天宁区" in system_prompt
+    assert "会话状态" in system_prompt
 
 
 async def test_streaming_requires_published_agent(async_client) -> None:

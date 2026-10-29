@@ -12,8 +12,9 @@ from app.core.tenant import TenantContext
 from app.core.tracing import get_trace_id
 from app.domain.agent.service import get_published_version
 from app.domain.session.models import Conversation, ConversationTurn, Message, Run
+from app.runtime.builder import ContextBuilder
 from app.runtime.context import RunContext, RuntimeResult
-from app.runtime.react_executor import ReActExecutor
+from app.runtime.react_executor import ReActExecutor, build_system_prompt
 from app.runtime.registry import run_registry
 
 ANSWER_CHUNK_SIZE = 20
@@ -152,6 +153,11 @@ async def stream_message(
     async def on_event(event: dict) -> None:
         await queue.put(event)
 
+    token_budget = int(version.model_policy_json.get("token_budget", 32000))
+    system_prompt = await _build_system_prompt(
+        session, ctx, conversation, version, user_message.id, text, token_budget
+    )
+
     run_ctx = RunContext(
         run_id=run_id,
         tenant_id=ctx.tenant_id,
@@ -165,8 +171,9 @@ async def stream_message(
         model_policy=version.model_policy_json,
         allowed_tools=list(version.tool_bindings_json or []),
         max_steps=int(version.model_policy_json.get("max_steps", 8)),
-        token_budget=int(version.model_policy_json.get("token_budget", 32000)),
+        token_budget=token_budget,
         timeout_ms=int(version.model_policy_json.get("timeout_ms", 30000)),
+        system_prompt=system_prompt,
     )
     executor = ReActExecutor(
         session,
@@ -265,6 +272,61 @@ async def _save_assistant(
     turn.assistant_message_id = message.id
     await session.commit()
     return message
+
+
+async def _build_system_prompt(
+    session: AsyncSession,
+    ctx: TenantContext,
+    conversation: Conversation,
+    version,
+    user_message_id: int,
+    text: str,
+    token_budget: int,
+) -> str:
+    from app.core.exceptions import ValidationError
+    from app.domain.memory.service import search_memories
+    from app.domain.profile.service import get_profile_summary
+    from app.domain.prompt.models import PromptVersion
+    from app.domain.prompt.service import render
+
+    agent_prompt = build_system_prompt(version.config_json, list(version.tool_bindings_json or []))
+    if version.prompt_version_id:
+        prompt_version = await session.get(PromptVersion, version.prompt_version_id)
+        if (
+            prompt_version is not None
+            and prompt_version.tenant_id == ctx.tenant_id
+            and prompt_version.status == "PUBLISHED"
+        ):
+            variables = {
+                "agent.role": version.config_json.get("role", ""),
+                "goal": version.config_json.get("goal", ""),
+                "question": text,
+            }
+            try:
+                agent_prompt = agent_prompt + "\n\n" + render(prompt_version.content, variables)
+            except ValidationError:
+                pass
+
+    profile_summary = ""
+    memories: list[str] = []
+    try:
+        profile_summary = await get_profile_summary(session, ctx)
+        items = await search_memories(session, ctx, query=text, limit=5)
+        memories = [f"{item.subject}：{item.object_value}" for item in items]
+    except Exception:  # noqa: BLE001 - 画像/记忆不可用不得阻塞对话
+        pass
+
+    built = await ContextBuilder(session).build(
+        tenant_id=ctx.tenant_id,
+        conversation=conversation,
+        agent_prompt=agent_prompt,
+        user_message=text,
+        token_budget=token_budget,
+        profile_summary=profile_summary,
+        memories=memories,
+        exclude_message_id=user_message_id,
+    )
+    return built.to_prompt()
 
 
 async def _first_published_agent(session: AsyncSession, ctx: TenantContext):

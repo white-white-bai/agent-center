@@ -17,6 +17,7 @@ class RunContext:
     max_steps: int = 8
     token_budget: int = 32000
     timeout_ms: int = 30000
+    system_prompt: str | None = None
 
 
 @dataclass

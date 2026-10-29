@@ -22,14 +22,18 @@ from app.runtime.context_builder import (
 
 
 async def _recent_messages(
-    session: AsyncSession, tenant_id: str, conversation_id: int, limit: int = 6
+    session: AsyncSession,
+    tenant_id: str,
+    conversation_id: int,
+    limit: int = 6,
+    exclude_message_id: int | None = None,
 ) -> list[Message]:
-    result = await session.execute(
-        select(Message)
-        .where(Message.tenant_id == tenant_id, Message.conversation_id == conversation_id)
-        .order_by(Message.id.desc())
-        .limit(limit)
+    query = select(Message).where(
+        Message.tenant_id == tenant_id, Message.conversation_id == conversation_id
     )
+    if exclude_message_id is not None:
+        query = query.where(Message.id != exclude_message_id)
+    result = await session.execute(query.order_by(Message.id.desc()).limit(limit))
     return list(reversed(result.scalars().all()))
 
 
@@ -50,6 +54,7 @@ class ContextBuilder:
         profile_summary: str = "",
         memories: list[str] | None = None,
         knowledge_snippets: list[str] | None = None,
+        exclude_message_id: int | None = None,
     ) -> BuiltContext:
         sections = [
             Section(name="safety", priority=PRIORITY_SAFETY, content=SAFETY_BASELINE),
@@ -61,7 +66,9 @@ class ContextBuilder:
             ),
         ]
 
-        recent = await _recent_messages(self.session, tenant_id, conversation.id)
+        recent = await _recent_messages(
+            self.session, tenant_id, conversation.id, exclude_message_id=exclude_message_id
+        )
         recent_text = "\n".join(f"{message.role}: {message.content}" for message in recent)
         sections.append(Section(name="recent_messages", priority=PRIORITY_RECENT, content=recent_text))
 
