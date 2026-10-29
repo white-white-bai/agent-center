@@ -54,5 +54,15 @@ async def create_version(
 async def transition_version(
     template_id: int, version_id: int, payload: TransitionRequest, session: DbSession, ctx: CurrentTenant
 ) -> dict:
+    from app.domain.evaluation import audit
+
     version = await repository.transition(session, ctx, version_id, payload.target)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="prompt.transition",
+        resource_type="prompt_version",
+        resource_id=version.id,
+        detail={"target": payload.target, "templateId": template_id},
+    )
     return ok(_serialize_version(version))

@@ -110,5 +110,15 @@ async def create_version(
 
 @router.post("/{agent_id}/publish")
 async def publish_agent(agent_id: int, payload: PublishRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.evaluation import audit
+
     version = await service.publish_version(session, ctx, agent_id, payload.version_id)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="agent.publish",
+        resource_type="agent",
+        resource_id=agent_id,
+        detail={"versionId": version.id, "versionNo": version.version_no},
+    )
     return ok(_serialize_version(version))

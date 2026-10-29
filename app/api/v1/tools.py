@@ -46,6 +46,8 @@ def _serialize_tool(tool) -> dict:
 
 @router.post("")
 async def create_tool(payload: CreateToolRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.evaluation import audit
+
     tool = await service.create_tool(
         session,
         ctx,
@@ -61,6 +63,14 @@ async def create_tool(payload: CreateToolRequest, session: DbSession, ctx: Curre
         endpoint=payload.endpoint,
         rate_limit_policy=payload.rate_limit_policy,
         auth_policy={"method": payload.method.upper(), "headers": payload.headers},
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="tool.create",
+        resource_type="tool",
+        resource_id=tool.tool_code,
+        detail={"writeOperation": tool.write_operation},
     )
     return ok(_serialize_tool(tool))
 

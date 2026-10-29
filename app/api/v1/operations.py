@@ -23,6 +23,67 @@ async def get_run_admin(run_id: str, session: DbSession, ctx: CurrentTenant) -> 
     return ok({"run": run_service.serialize_run(run), "steps": [run_service.serialize_step(s) for s in steps]})
 
 
+class ConvertBadcaseRequest(BaseModel):
+    datasetId: int
+    question: str = Field(min_length=1)
+    expectedAnswer: str | None = None
+
+
+@router.get("/admin/badcases")
+async def list_badcases(session: DbSession, ctx: CurrentTenant, status: str | None = None) -> dict:
+    from app.domain.evaluation import badcase
+
+    items = await badcase.list_badcases(session, ctx, status=status)
+    return ok(
+        [
+            {
+                "id": item.id,
+                "runId": item.run_id,
+                "status": item.status,
+                "description": item.description,
+                "evalCaseId": item.eval_case_id,
+            }
+            for item in items
+        ]
+    )
+
+
+@router.post("/admin/badcases/{badcase_id}/convert")
+async def convert_badcase(
+    badcase_id: int, payload: ConvertBadcaseRequest, session: DbSession, ctx: CurrentTenant
+) -> dict:
+    from app.domain.evaluation import audit, badcase
+
+    item = await badcase.convert_to_eval_case(
+        session,
+        ctx,
+        badcase_id,
+        dataset_id=payload.datasetId,
+        question=payload.question,
+        expected_answer=payload.expectedAnswer,
+    )
+    await audit.record_audit(
+        session, ctx, action="badcase.convert", resource_type="badcase", resource_id=item.id
+    )
+    return ok({"id": item.id, "status": item.status, "evalCaseId": item.eval_case_id})
+
+
+@router.get("/admin/audit-logs")
+async def list_audit_logs(
+    session: DbSession,
+    ctx: CurrentTenant,
+    action: str | None = None,
+    resourceType: str | None = None,
+    limit: int = 100,
+) -> dict:
+    from app.domain.evaluation import audit
+
+    entries = await audit.list_audit_logs(
+        session, ctx, action=action, resource_type=resourceType, limit=limit
+    )
+    return ok([audit.serialize_audit(entry) for entry in entries])
+
+
 class FeedbackRequest(BaseModel):
     conversationId: int | None = None
     messageId: int | None = None

@@ -91,6 +91,11 @@ async def submit_feedback(
     session.add(feedback)
     await session.commit()
     await session.refresh(feedback)
+
+    if rating == "down":
+        from app.domain.evaluation.badcase import create_badcase_from_feedback
+
+        await create_badcase_from_feedback(session, ctx, feedback)
     return feedback
 
 

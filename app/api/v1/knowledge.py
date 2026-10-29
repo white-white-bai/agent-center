@@ -73,8 +73,18 @@ async def create_document(
 async def publish_document(
     space_id: int, document_id: int, session: DbSession, ctx: CurrentTenant
 ) -> dict:
+    from app.domain.evaluation import audit
+
     await service.get_space(session, ctx, space_id)
     document = await service.publish_document(session, ctx, document_id)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="knowledge.publish",
+        resource_type="knowledge_document",
+        resource_id=document.id,
+        detail={"spaceId": space_id},
+    )
     return ok({"id": document.id, "status": document.status})
 
 
