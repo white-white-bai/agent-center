@@ -182,6 +182,114 @@ async def _index_chunks(session: AsyncSession, ctx: TenantContext, document_id: 
         pass
 
 
+async def get_document(session: AsyncSession, ctx: TenantContext, document_id: int) -> KnowledgeDocument:
+    result = await session.execute(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.id == document_id, KnowledgeDocument.tenant_id == ctx.tenant_id
+        )
+    )
+    document = result.scalar_one_or_none()
+    if document is None:
+        raise NotFoundError("知识文档不存在")
+    return document
+
+
+async def _archive_chunks(session: AsyncSession, ctx: TenantContext, document_id: int) -> list[str]:
+    result = await session.execute(
+        select(KnowledgeChunk).where(
+            KnowledgeChunk.document_id == document_id,
+            KnowledgeChunk.tenant_id == ctx.tenant_id,
+        )
+    )
+    chunks = list(result.scalars().all())
+    for chunk in chunks:
+        chunk.status = "ARCHIVED"
+    await session.commit()
+
+    chunk_ids = [chunk.chunk_id for chunk in chunks]
+    try:
+        from app.infrastructure.vector.store import get_vector_store
+
+        get_vector_store().delete(ctx.tenant_id, chunk_ids)
+    except Exception:  # noqa: BLE001 - 向量删除失败不影响下架
+        pass
+    return chunk_ids
+
+
+async def new_version(
+    session: AsyncSession,
+    ctx: TenantContext,
+    document_id: int,
+    *,
+    content: str,
+    title: str | None = None,
+    region_code: str | None = None,
+    authority_level: int | None = None,
+    effective_from: datetime | None = None,
+    effective_to: datetime | None = None,
+    source_url: str | None = None,
+) -> KnowledgeDocument:
+    """基于已有文档创建新版本，旧版本置为 SUPERSEDED 并下架旧切片。"""
+    old = await get_document(session, ctx, document_id)
+    old.status = "SUPERSEDED"
+    await session.commit()
+    await _archive_chunks(session, ctx, old.id)
+
+    document = KnowledgeDocument(
+        tenant_id=ctx.tenant_id,
+        space_id=old.space_id,
+        document_code=old.document_code,
+        title=title or old.title,
+        version_no=old.version_no + 1,
+        status="DRAFT",
+        region_code=region_code if region_code is not None else old.region_code,
+        authority_level=authority_level if authority_level is not None else old.authority_level,
+        effective_from=effective_from if effective_from is not None else old.effective_from,
+        effective_to=effective_to if effective_to is not None else old.effective_to,
+        source_url=source_url if source_url is not None else old.source_url,
+        content_hash=content_hash(content),
+    )
+    session.add(document)
+    await session.commit()
+    await session.refresh(document)
+
+    chunks = split_text(content)
+    for index, chunk in enumerate(chunks):
+        session.add(
+            KnowledgeChunk(
+                tenant_id=ctx.tenant_id,
+                chunk_id=f"chunk_{document.id}_{index}_{uuid4().hex[:6]}",
+                document_id=document.id,
+                document_version=document.version_no,
+                title=document.title,
+                section=chunk["section"],
+                content=chunk["content"],
+                domain_code=(await get_space(session, ctx, document.space_id)).domain_code,
+                region_code=document.region_code,
+                effective_from=document.effective_from,
+                effective_to=document.effective_to,
+                authority_level=document.authority_level,
+                source_url=document.source_url,
+                content_hash=content_hash(chunk["content"]),
+                status="DRAFT",
+            )
+        )
+    await session.commit()
+    await _index_chunks(session, ctx, document.id, chunks)
+    return document
+
+
+async def unpublish_document(
+    session: AsyncSession, ctx: TenantContext, document_id: int
+) -> KnowledgeDocument:
+    document = await get_document(session, ctx, document_id)
+    document.status = "ARCHIVED"
+    await session.commit()
+    await _archive_chunks(session, ctx, document_id)
+    await session.refresh(document)
+    return document
+
+
 async def publish_document(session: AsyncSession, ctx: TenantContext, document_id: int) -> KnowledgeDocument:
     result = await session.execute(
         select(KnowledgeDocument).where(

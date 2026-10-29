@@ -108,6 +108,67 @@ async def publish_document(
     return ok({"id": document.id, "status": document.status})
 
 
+class NewVersionRequest(BaseModel):
+    content: str = Field(min_length=1)
+    title: str | None = Field(default=None, max_length=300)
+    regionCode: str | None = Field(default=None, max_length=20)
+    authorityLevel: int | None = Field(default=None, ge=1, le=5)
+    effectiveFrom: datetime | None = None
+    effectiveTo: datetime | None = None
+    sourceUrl: str | None = None
+
+
+@router.post("/admin/knowledge-documents/{document_id}/versions")
+async def create_document_version(
+    document_id: int, payload: NewVersionRequest, session: DbSession, ctx: AdminContext
+) -> dict:
+    from app.domain.evaluation import audit
+
+    document = await service.new_version(
+        session,
+        ctx,
+        document_id,
+        content=payload.content,
+        title=payload.title,
+        region_code=payload.regionCode,
+        authority_level=payload.authorityLevel,
+        effective_from=payload.effectiveFrom,
+        effective_to=payload.effectiveTo,
+        source_url=payload.sourceUrl,
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="knowledge.version.create",
+        resource_type="knowledge_document",
+        resource_id=document.id,
+        detail={"previousDocumentId": document_id, "versionNo": document.version_no},
+    )
+    return ok(
+        {
+            "id": document.id,
+            "documentCode": document.document_code,
+            "versionNo": document.version_no,
+            "status": document.status,
+        }
+    )
+
+
+@router.post("/admin/knowledge-documents/{document_id}/unpublish")
+async def unpublish_document(document_id: int, session: DbSession, ctx: AdminContext) -> dict:
+    from app.domain.evaluation import audit
+
+    document = await service.unpublish_document(session, ctx, document_id)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="knowledge.unpublish",
+        resource_type="knowledge_document",
+        resource_id=document.id,
+    )
+    return ok({"id": document.id, "status": document.status})
+
+
 @router.post("/knowledge/search")
 async def search(payload: SearchRequest, session: DbSession, ctx: CurrentTenant) -> dict:
     results = await service.search(
