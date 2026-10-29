@@ -24,6 +24,7 @@ from app.integrations.llm.router import ModelRouter
 from app.runtime.context import RunContext, RuntimeResult
 from app.runtime.decisions import (
     ClarifyDecision,
+    FanoutDecision,
     FinalDecision,
     HandoffDecision,
     SlotsDecision,
@@ -31,6 +32,7 @@ from app.runtime.decisions import (
     TopicDecision,
     parse_decision,
 )
+from app.runtime.fanout import fan_out, reduce_outcomes
 
 SYSTEM_TEMPLATE = """你是{role}。
 目标：{goal}
@@ -43,6 +45,7 @@ SYSTEM_TEMPLATE = """你是{role}。
 4. 记录槽位：{{"type":"slots","slots":{{"槽位名":"值"}}}}
 5. 交接其他 Agent：{{"type":"handoff","to":"目标 Agent 编码","reason":"原因"}}
 6. 话题切换/恢复：{{"type":"topic","action":"switch","topic":"新话题"}} 或 {{"type":"topic","action":"resume"}}
+7. 并行只读工具：{{"type":"fanout","tasks":[{{"tool":"工具编码","arguments":{{}}}}, ...]}}
 可用工具：{tools}
 必填槽位：{required_slots}
 当前会话状态：{session_state}
@@ -264,6 +267,9 @@ class ReActExecutor:
         if kind == "topic":
             return await self._act_topic(ctx, run_ctx, state, decision, step_no)
 
+        if kind == "fanout":
+            return await self._act_fanout(ctx, run_ctx, state, decision, step_no)
+
         if kind == "handoff":
             return await self._act_handoff(ctx, run_ctx, state, decision, step_no)
 
@@ -310,6 +316,126 @@ class ReActExecutor:
         await self._record_step(ctx, run_ctx, step_no, "STATE_TRANSITION", note)
         messages = state["messages"] + [{"role": "user", "content": f"{note}，请继续。"}]
         return {**state, "messages": messages}
+
+    async def _act_fanout(
+        self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
+    ) -> GraphState:
+        from app.core.redaction import redact
+        from app.core.tool_execution import prepare_read_only_tool
+        from app.domain.tool.models import ToolInvokeLog
+        from app.runtime.resilience import get_resilience
+
+        resilience = get_resilience()
+        tasks: dict[str, Any] = {}
+        prepared: list[tuple[str, str, dict]] = []
+        tool_codes: list[str] = []
+        unauthorized: list[str] = []
+        prepare_failed: list[str] = []
+        for index, item in enumerate(decision.get("tasks") or []):
+            tool_code = item.get("tool")
+            arguments = item.get("arguments") or {}
+            if tool_code not in run_ctx.allowed_tools:
+                unauthorized.append(tool_code)
+                continue
+            try:
+                await prepare_read_only_tool(self.session, ctx, tool_code, arguments)
+            except AppError as exc:
+                prepare_failed.append(f"{tool_code}: {exc.message}")
+                continue
+
+            async def _runner(code: str = tool_code, args: dict = arguments) -> dict:
+                result = await self.tool_executor.execute(
+                    tool_code=code,
+                    arguments=args,
+                    context=ToolContext(
+                        tenant_id=ctx.tenant_id,
+                        user_id=ctx.user_id,
+                        conversation_id=run_ctx.conversation_id,
+                        run_id=run_ctx.run_id,
+                        trace_id=run_ctx.trace_id,
+                    ),
+                )
+                if not result.ok:
+                    raise RuntimeError(result.error_message or result.error_code or "工具执行失败")
+                return result.output
+
+            key = f"{tool_code}#{index}"
+            tasks[key] = _runner
+            prepared.append((key, tool_code, arguments))
+            tool_codes.append(tool_code)
+
+        if not tasks:
+            await self._record_step(
+                ctx,
+                run_ctx,
+                step_no,
+                "TOOL_RESULT",
+                f"并行任务均未授权: {','.join(unauthorized)}",
+                status="FAILED",
+            )
+            return {
+                **state,
+                "messages": state["messages"]
+                + [{"role": "user", "content": "并行任务未授权，请改用可用工具。"}],
+            }
+
+        outcomes = await fan_out(
+            tasks,
+            timeout_ms=min(10000, run_ctx.timeout_ms),
+            max_concurrency=4,
+        )
+        summary = reduce_outcomes(outcomes)
+        if unauthorized:
+            summary["unauthorized"] = unauthorized
+        if prepare_failed:
+            summary["prepareFailed"] = prepare_failed
+
+        for (_key, tool_code, arguments), outcome in zip(prepared, outcomes.outcomes):
+            await resilience.record(
+                f"{ctx.tenant_id}:{tool_code}", success=outcome.ok
+            )
+            self.session.add(
+                ToolInvokeLog(
+                    tenant_id=ctx.tenant_id,
+                    run_id=run_ctx.run_id,
+                    tool_code=tool_code,
+                    user_id=ctx.user_id,
+                    status=outcome.status,
+                    arguments_json=redact(arguments),
+                    result_summary=(
+                        redact(str(outcome.output))[:2000]
+                        if outcome.output is not None
+                        else outcome.error_message
+                    ),
+                    error_code=outcome.error_code,
+                )
+            )
+        await self.session.commit()
+
+        await self._record_step(
+            ctx,
+            run_ctx,
+            step_no,
+            "TOOL_RESULT",
+            json.dumps(summary, ensure_ascii=False)[:2000],
+            status="SUCCESS" if not summary["partial"] else "PARTIAL",
+        )
+        messages = state["messages"] + [
+            {
+                "role": "user",
+                "content": (
+                    '<tool_result untrusted="true">'
+                    + json.dumps(summary, ensure_ascii=False)
+                    + "</tool_result>\n请综合并行结果继续推理。"
+                ),
+            }
+        ]
+        return {
+            **state,
+            "messages": messages,
+            "tool_calls": state.get("tool_calls", 0) + len(tasks),
+            "tool_codes": list(state.get("tool_codes", [])) + tool_codes,
+        }
 
     async def _act_tool(
         self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
@@ -486,6 +612,8 @@ class ReActExecutor:
             return {"type": "slots", "slots": decision.slots}
         if isinstance(decision, TopicDecision):
             return {"type": "topic", "action": decision.action, "topic": decision.topic}
+        if isinstance(decision, FanoutDecision):
+            return {"type": "fanout", "tasks": decision.tasks}
         if isinstance(decision, HandoffDecision):
             return {
                 "type": "handoff",

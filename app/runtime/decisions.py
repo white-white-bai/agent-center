@@ -42,8 +42,19 @@ class TopicDecision:
     topic: str = ""
 
 
+@dataclass
+class FanoutDecision:
+    tasks: list[dict[str, Any]] = field(default_factory=list)
+
+
 Decision = (
-    ToolCallDecision | FinalDecision | ClarifyDecision | SlotsDecision | HandoffDecision | TopicDecision
+    ToolCallDecision
+    | FinalDecision
+    | ClarifyDecision
+    | SlotsDecision
+    | HandoffDecision
+    | TopicDecision
+    | FanoutDecision
 )
 
 
@@ -79,6 +90,14 @@ def parse_decision(content: str) -> Decision:
         if action == "switch" and not payload.get("topic"):
             raise ValidationError("切换话题缺少 topic 字段")
         return TopicDecision(action=action, topic=payload.get("topic") or "")
+    if decision_type == "fanout":
+        tasks = payload.get("tasks")
+        if not isinstance(tasks, list) or not tasks:
+            raise ValidationError("并行决策缺少 tasks 列表")
+        for item in tasks:
+            if not isinstance(item, dict) or not item.get("tool"):
+                raise ValidationError("并行任务缺少 tool 字段")
+        return FanoutDecision(tasks=tasks)
     if decision_type == "handoff":
         target = payload.get("to")
         if not target:

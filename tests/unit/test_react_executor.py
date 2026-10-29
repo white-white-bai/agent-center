@@ -4,6 +4,7 @@ from app.core.exceptions import ValidationError
 from app.core.tenant import TenantContext
 from app.runtime.decisions import (
     ClarifyDecision,
+    FanoutDecision,
     FinalDecision,
     SlotsDecision,
     ToolCallDecision,
@@ -66,6 +67,22 @@ def test_parse_topic_decisions() -> None:
     assert switch.action == "switch"
     assert switch.topic == "社保查询"
     assert resume.action == "resume"
+
+
+def test_parse_fanout_decision() -> None:
+    decision = parse_decision(
+        '{"type":"fanout","tasks":[{"tool":"knowledge.search","arguments":{"q":"a"}}]}'
+    )
+
+    assert isinstance(decision, FanoutDecision)
+    assert decision.tasks[0]["tool"] == "knowledge.search"
+
+
+def test_parse_fanout_requires_tasks() -> None:
+    with pytest.raises(ValidationError):
+        parse_decision('{"type":"fanout","tasks":[]}')
+    with pytest.raises(ValidationError):
+        parse_decision('{"type":"fanout","tasks":[{"arguments":{}}]}')
 
 
 def test_parse_topic_requires_valid_action() -> None:
