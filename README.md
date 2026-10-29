@@ -8,12 +8,38 @@
 ```bash
 python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
+# 或使用锁定版本：.venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m uvicorn app.main:app --reload
 ```
 
 打开 http://127.0.0.1:8000/docs 查看 OpenAPI。默认使用 SQLite，启动时自动建表。
 
-## Docker 本地一键启动
+## 一键启动（Docker）
+
+Windows：双击 `start.bat`，或在 PowerShell 中：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1
+```
+
+Linux / macOS：
+
+```bash
+chmod +x scripts/start.sh
+./scripts/start.sh
+```
+
+脚本会自动：检查并启动 Docker、从 `.env.example` 生成 `.env`（不覆盖已有文件）、构建并启动容器、等待健康检查通过后打印访问地址。
+
+其他参数：
+
+| 命令 | 作用 |
+| --- | --- |
+| `scripts/start.ps1 -Logs` / `scripts/start.sh --logs` | 跟踪应用日志 |
+| `scripts/start.ps1 -Stop` / `scripts/start.sh --stop` | 停止并移除容器（保留数据卷） |
+| `scripts/start.ps1 -NoBuild` / `-NoBuild` | 跳过镜像构建，仅启动 |
+
+也可以直接使用 compose：
 
 ```bash
 # 可选：在项目根目录创建 .env 填写模型密钥（compose 会自动读取）
@@ -45,7 +71,18 @@ docker compose up -d --build
 | --- | --- | --- |
 | `AC_DATABASE_URL` | `sqlite+aiosqlite:///./agent_center.db` | 数据库连接，生产使用 `mysql+aiomysql://...` |
 | `AC_AUTO_CREATE_TABLES` | `true` | 启动时自动建表；生产建议关闭并使用 Alembic |
-| `AC_MODEL_PROVIDER` | `stub` | `stub` 或 `litellm` |
+| `AC_MODEL_PROVIDER` | `stub` | `stub`、`litellm` 或 `openai`（OpenAI 兼容网关） |
+| `AC_LLM_BASE_URL` | 空 | 模型网关地址，如 `https://api.commandcode.ai/provider/v1` |
+| `AC_LLM_API_KEY` | 空 | 模型密钥；为空时自动回退桩模型 |
+| `AC_LLM_MODEL` | `deepseek/deepseek-v4.1-flash` | 主模型 |
+| `AC_LLM_FALLBACK_MODEL` | `deepseek/deepseek-v4.1` | 降级模型 |
+| `AC_EMBEDDING_MODEL` | 空 | Embedding 模型；为空时使用本地哈希向量 |
+| `AC_EMBEDDING_DIM` | `1024` | 向量维度，需与 Milvus 集合一致 |
+| `AC_REDIS_URL` | 空 | Redis 地址；为空时使用进程内锁/限流/事件流 |
+| `AC_MILVUS_URI` | 空 | Milvus 地址；容器内默认 `/data/milvus.db`（Lite） |
+| `AC_CREDENTIAL_KEY` | 空 | 工具凭证加密密钥；生产必须配置 |
+| `AC_SSE_HEARTBEAT_SECONDS` | `15` | SSE 心跳间隔 |
+| `AC_TRACE_RETENTION_DAYS` | `90` | 轨迹保留天数 |
 | `AC_STUB_REPLY` | 桩回复 JSON | 桩模型返回的决策 JSON |
 | `AC_SENSITIVE_WORDS` | 空 | 敏感词表，逗号分隔 |
 | `AC_MODERATION_URL` | 空 | 外部审核服务地址，不可用时拒绝放行 |
@@ -113,12 +150,19 @@ app/
   domain/          领域模型与服务（agent/prompt/session/tool/memory/profile/knowledge/model/evaluation/notification/safety）
   runtime/         ReAct 执行器、路由、交接、Fan-out、上下文装配、检查点
   integrations/    LLM、MCP、HTTP 工具、OpenAPI
-  infrastructure/  数据库与会话
+  infrastructure/  数据库与会话、Redis、向量存储
   workers/         后台任务
-migrations/        Alembic 迁移
+scripts/           一键启动、DDL 导出
+migrations/        Alembic 迁移骨架
 tests/             单元与集成测试
+docker-compose.yml 本地容器编排（app + MySQL + Redis，Milvus profile）
+requirements*.txt  锁定版本依赖（运行时 / 开发）
+AGENTS.md          编码代理与开发约定
 ```
+
+依赖安装二选一：`pip install -e ".[dev]"`（推荐开发）或 `pip install -r requirements-dev.txt`（锁定版本）。
 
 ## 待确认事项
 
 见 [docs/open-questions.md](docs/open-questions.md)，包含模型来源、认证接口、向量库、Redis 限流与锁、管理前端等问题。
+开发约定与命令见 [AGENTS.md](AGENTS.md)。

@@ -1,0 +1,18 @@
+# Agent Center 运行时依赖（版本与当前验证环境一致）
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.2
+SQLAlchemy[asyncio]==2.1.6
+aiosqlite==0.22.1
+jsonschema==4.26.0
+httpx==0.28.1
+langgraph==1.2.18
+cryptography==50.0.2
+
+# 可选：生产集成（MySQL / Redis / Milvus）
+aiomysql==0.3.2
+PyMySQL==1.2.3
+redis==8.1.0
+pymilvus==2.4.15
+milvus-lite==2.4.12; sys_platform == "linux"
