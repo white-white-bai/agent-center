@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     milvus_collection: str = "agent_center_knowledge"
     vector_top_k: int = 20
     memory_extraction_enabled: bool = False
+    sse_heartbeat_seconds: float = 15.0
+    trace_retention_days: int = 90
     credential_key: str = ""
     sensitive_words: str = ""
     moderation_url: str | None = None

@@ -47,6 +47,17 @@ async def replay_run_events(
     return ok([event_service.serialize_event(event) for event in events])
 
 
+class PurgeTraceRequest(BaseModel):
+    days: int | None = Field(default=None, ge=1, le=3650)
+
+
+@router.post("/admin/maintenance/purge-trace")
+async def purge_trace(payload: PurgeTraceRequest, session: DbSession, ctx: AdminContext) -> dict:
+    from app.workers.retention import purge_trace as purge
+
+    return ok(await purge(session, ctx, days=payload.days))
+
+
 @router.get("/admin/metrics/overview")
 async def metrics_overview(session: DbSession, ctx: AdminContext) -> dict:
     from app.domain.evaluation import metrics

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from datetime import datetime
 from uuid import uuid4
@@ -252,6 +253,11 @@ async def _stream_message_locked(
     run_registry.register(run_id)
     task = asyncio.create_task(executor.run(ctx, run_ctx))
 
+    from app.core.config import get_settings as _get_settings
+
+    heartbeat_interval = _get_settings().sse_heartbeat_seconds
+    last_emit = time.monotonic()
+
     try:
         while True:
             if task.done() and queue.empty():
@@ -259,10 +265,14 @@ async def _stream_message_locked(
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=0.05)
             except asyncio.TimeoutError:
+                if heartbeat_interval > 0 and time.monotonic() - last_emit >= heartbeat_interval:
+                    yield await emit("heartbeat", {"ts": datetime.utcnow().isoformat()})
+                    last_emit = time.monotonic()
                 continue
             if event is None:
                 break
             yield await emit(event["event"], event["data"])
+            last_emit = time.monotonic()
 
         result: RuntimeResult = await task
     finally:

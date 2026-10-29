@@ -56,10 +56,11 @@ X-Trace-Id: trace_xxx
 | 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test` |
 | 知识 | `POST /api/v1/admin/knowledge-spaces`、`.../documents`、`.../publish`、`POST /api/v1/knowledge/search` |
 | 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks` |
-| 记忆/画像 | `GET /api/v1/memory`、`GET /api/v1/profile/summary` |
+| 记忆/画像 | `GET /api/v1/memory`、`GET /api/v1/profile/summary`、`GET /api/v1/profile/suggestions` |
 | 评测 | `POST /api/v1/admin/eval-datasets`、`POST /api/v1/admin/evaluations` |
 | 运营 | `GET /api/v1/admin/badcases`、`GET /api/v1/admin/audit-logs`、`GET /api/v1/admin/metrics/overview` |
 | 提醒 | `POST /api/v1/notifications`、`POST /api/v1/admin/notifications/dispatch-due` |
+| 运维 | `POST /api/v1/admin/maintenance/purge-trace`（默认清理 90 天前轨迹） |
 
 ### SSE 事件
 
