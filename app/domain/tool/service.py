@@ -1,0 +1,102 @@
+import jsonschema
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import NotFoundError, ValidationError
+from app.core.tenant import TenantContext
+from app.domain.tool.executor import ToolContext, ToolExecutor, ToolResult
+from app.domain.tool.models import ToolDefinition, ToolInvokeLog
+
+
+def validate_arguments(schema: dict, arguments: dict) -> None:
+    if not schema:
+        return
+    try:
+        jsonschema.validate(instance=arguments, schema=schema)
+    except jsonschema.ValidationError as exc:
+        raise ValidationError(f"工具参数校验失败: {exc.message}") from exc
+
+
+async def create_tool(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    tool_code: str,
+    name: str,
+    description: str | None,
+    source_type: str,
+    input_schema: dict,
+    output_schema: dict | None = None,
+    timeout_ms: int = 5000,
+    write_operation: bool = False,
+    require_confirmation: bool = False,
+    idempotent: bool = False,
+    endpoint: str | None = None,
+) -> ToolDefinition:
+    tool = ToolDefinition(
+        tenant_id=ctx.tenant_id,
+        tool_code=tool_code,
+        name=name,
+        description=description,
+        source_type=source_type,
+        endpoint=endpoint,
+        input_schema_json=input_schema,
+        output_schema_json=output_schema or {},
+        timeout_ms=timeout_ms,
+        write_operation=write_operation,
+        require_confirmation=require_confirmation or write_operation,
+        idempotent=idempotent,
+    )
+    session.add(tool)
+    await session.commit()
+    await session.refresh(tool)
+    return tool
+
+
+async def get_tool(session: AsyncSession, ctx: TenantContext, tool_code: str) -> ToolDefinition:
+    result = await session.execute(
+        select(ToolDefinition)
+        .where(ToolDefinition.tenant_id == ctx.tenant_id, ToolDefinition.tool_code == tool_code)
+        .order_by(ToolDefinition.version_no.desc())
+        .limit(1)
+    )
+    tool = result.scalar_one_or_none()
+    if tool is None:
+        raise NotFoundError(f"工具不存在: {tool_code}")
+    if tool.status != "ENABLED":
+        raise ValidationError(f"工具已禁用: {tool_code}")
+    return tool
+
+
+async def invoke_tool(
+    session: AsyncSession,
+    ctx: TenantContext,
+    executor: ToolExecutor,
+    *,
+    tool_code: str,
+    arguments: dict,
+    tool_context: ToolContext,
+    allow_write: bool = False,
+) -> ToolResult:
+    tool = await get_tool(session, ctx, tool_code)
+    if tool.write_operation and not allow_write:
+        raise ValidationError("写操作工具必须经过用户确认后才能执行")
+    validate_arguments(tool.input_schema_json, arguments)
+
+    result = await executor.execute(tool_code=tool_code, arguments=arguments, context=tool_context)
+    session.add(
+        ToolInvokeLog(
+            tenant_id=ctx.tenant_id,
+            run_id=tool_context.run_id,
+            tool_code=tool_code,
+            user_id=ctx.user_id,
+            status=result.status,
+            arguments_json=arguments,
+            result_summary=str(result.output)[:2000] if result.output else result.error_message,
+            error_code=result.error_code,
+            duration_ms=result.duration_ms,
+            idempotency_key=tool_context.idempotency_key,
+        )
+    )
+    await session.commit()
+    return result
