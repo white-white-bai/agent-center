@@ -10,6 +10,7 @@ from app.domain.tool import idempotency
 from app.domain.tool.executor import ToolContext, ToolExecutor, ToolResult
 from app.domain.tool.idempotency import build_idempotency_key
 from app.domain.tool.models import ToolDefinition, ToolIdempotencyRecord, ToolInvokeLog
+from app.domain.tool.resilience import circuit_breaker, rate_limiter
 
 
 async def _load_idempotency_record(
@@ -49,6 +50,7 @@ async def create_tool(
     require_confirmation: bool = False,
     idempotent: bool = False,
     endpoint: str | None = None,
+    rate_limit_policy: dict | None = None,
 ) -> ToolDefinition:
     tool = ToolDefinition(
         tenant_id=ctx.tenant_id,
@@ -60,6 +62,7 @@ async def create_tool(
         input_schema_json=input_schema,
         output_schema_json=output_schema or {},
         timeout_ms=timeout_ms,
+        rate_limit_policy_json=rate_limit_policy or {},
         write_operation=write_operation,
         require_confirmation=require_confirmation or write_operation,
         idempotent=idempotent,
@@ -100,6 +103,14 @@ async def invoke_tool(
         raise ValidationError("写操作工具必须经过用户确认后才能执行")
     validate_arguments(tool.input_schema_json, arguments)
 
+    limiter_key = f"{ctx.tenant_id}:{tool_code}"
+    rate_limiter.check(
+        limiter_key,
+        limit=int(tool.rate_limit_policy_json.get("limit", 0)),
+        window_seconds=int(tool.rate_limit_policy_json.get("window_seconds", 60)),
+    )
+    circuit_breaker.check(limiter_key)
+
     if tool.write_operation and tool.idempotent:
         key = tool_context.idempotency_key or build_idempotency_key(
             tool_context.run_id, tool_code, arguments
@@ -112,6 +123,7 @@ async def invoke_tool(
         tool_context = replace(tool_context, idempotency_key=key)
 
     result = await executor.execute(tool_code=tool_code, arguments=arguments, context=tool_context)
+    circuit_breaker.record(limiter_key, success=result.ok)
 
     if tool.write_operation and tool.idempotent:
         record = await _load_idempotency_record(session, ctx, tool_code, tool_context.idempotency_key or "")

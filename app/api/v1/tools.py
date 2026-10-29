@@ -19,6 +19,7 @@ class CreateToolRequest(BaseModel):
     timeout_ms: int = Field(default=5000, ge=100, le=60000)
     write_operation: bool = False
     idempotent: bool = False
+    rate_limit_policy: dict = Field(default_factory=dict)
 
 
 class TestToolRequest(BaseModel):
@@ -56,6 +57,7 @@ async def create_tool(payload: CreateToolRequest, session: DbSession, ctx: Curre
         write_operation=payload.write_operation,
         idempotent=payload.idempotent,
         endpoint=payload.endpoint,
+        rate_limit_policy=payload.rate_limit_policy,
     )
     return ok(_serialize_tool(tool))
 
