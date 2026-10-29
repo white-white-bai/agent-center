@@ -285,6 +285,23 @@ async def _stream_message_locked(
         async for chunk in _answer_events(stream, result.answer, emit):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
+        try:
+            from app.domain.memory.service import add_episode, add_procedure
+
+            await add_episode(
+                session,
+                ctx,
+                conversation_id=conversation.id,
+                summary=f"用户：{text[:100]}；助手：{result.answer[:200]}",
+                event={"turnId": turn.id, "agentCode": agent.code, "status": result.status},
+            )
+            if result.tool_codes:
+                await add_procedure(
+                    session, ctx, agent_code=agent.code, tool_codes=result.tool_codes
+                )
+        except Exception:  # noqa: BLE001 - 记忆写入失败不得影响对话
+            pass
+
         if knowledge_results:
             for item in knowledge_results:
                 yield await emit(

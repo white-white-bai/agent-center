@@ -82,6 +82,7 @@ class GraphState(TypedDict, total=False):
     error_code: str | None
     confirmation_id: str | None
     confirmation_summary: str
+    tool_codes: list[str]
 
 
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
@@ -135,6 +136,7 @@ class ReActExecutor:
             ],
             "step": 0,
             "tool_calls": 0,
+            "tool_codes": [],
             "token_input": 0,
             "token_output": 0,
             "status": "RUNNING",
@@ -165,6 +167,7 @@ class ReActExecutor:
             error_code=final_state.get("error_code"),
             confirmation_id=final_state.get("confirmation_id"),
             confirmation_summary=final_state.get("confirmation_summary", ""),
+            tool_codes=list(final_state.get("tool_codes", [])),
         )
         await self._finish(ctx, run_ctx, result)
         return result
@@ -411,7 +414,12 @@ class ReActExecutor:
                 ),
             }
         ]
-        return {**state, "messages": messages, "tool_calls": state.get("tool_calls", 0) + 1}
+        return {
+            **state,
+            "messages": messages,
+            "tool_calls": state.get("tool_calls", 0) + 1,
+            "tool_codes": list(state.get("tool_codes", [])) + [tool_code],
+        }
 
     async def _act_handoff(
         self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int

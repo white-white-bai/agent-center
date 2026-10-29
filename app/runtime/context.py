@@ -33,3 +33,4 @@ class RuntimeResult:
     error_code: str | None = None
     confirmation_id: str | None = None
     confirmation_summary: str = ""
+    tool_codes: list[str] = field(default_factory=list)

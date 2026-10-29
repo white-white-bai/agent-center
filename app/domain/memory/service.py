@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.core.tenant import TenantContext
-from app.domain.memory.models import MemoryEmbedding, MemoryItem
+from app.domain.memory.models import MemoryEmbedding, MemoryEpisode, MemoryItem
 
 ID_CARD_PATTERN = re.compile(r"\b\d{17}[\dXx]\b")
 PHONE_PATTERN = re.compile(r"\b1\d{10}\b")
@@ -102,6 +102,50 @@ async def search_memories(
     tokens = {token for token in query if not token.isspace()}
     ranked = sorted(candidates, key=lambda item: _score(item, tokens, now), reverse=True)
     return ranked[:limit]
+
+
+async def add_episode(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    conversation_id: int | None,
+    summary: str,
+    event: dict | None = None,
+) -> MemoryEpisode:
+    episode = MemoryEpisode(
+        tenant_id=ctx.tenant_id,
+        user_id=ctx.user_id,
+        conversation_id=conversation_id,
+        summary=summary[:1000],
+        event_json=event or {},
+        occurred_at=datetime.utcnow(),
+    )
+    session.add(episode)
+    await session.commit()
+    await session.refresh(episode)
+    return episode
+
+
+async def add_procedure(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    agent_code: str,
+    tool_codes: list[str],
+    importance: float = 0.7,
+) -> MemoryItem | None:
+    if not tool_codes:
+        return None
+    return await add_memory(
+        session,
+        ctx,
+        memory_type="PROCEDURAL",
+        subject=agent_code or "agent",
+        predicate="tool_chain",
+        object_value=",".join(tool_codes),
+        confidence=0.6,
+        importance=importance,
+    )
 
 
 async def delete_memory(session: AsyncSession, ctx: TenantContext, memory_id: int) -> None:
