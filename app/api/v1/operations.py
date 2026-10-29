@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import AdminContext, CurrentTenant, DbSession
+from app.api.deps import AdminContext, CurrentTenant, DbSession, ModelRouterDep
 from app.core.responses import ok
 from app.domain.session import run_service, service
 
@@ -135,6 +135,63 @@ async def list_sessions(
             "total": total,
             "page": page,
             "pageSize": page_size,
+        }
+    )
+
+
+@router.get("/admin/model/health")
+async def model_health(session: DbSession, ctx: AdminContext, model_router: ModelRouterDep) -> dict:
+    """实际调用一次模型，验证密钥、地址与模型是否可用。"""
+    import time
+
+    from app.core.config import get_settings
+    from app.integrations.llm.client import ChatMessage, LLMRequest
+
+    settings = get_settings()
+    if not settings.llm_api_key:
+        return ok(
+            {
+                "configured": False,
+                "ok": False,
+                "message": "未配置 AC_LLM_API_KEY，当前使用桩模型",
+            }
+        )
+
+    started = time.perf_counter()
+    try:
+        response = await model_router.complete(
+            session,
+            ctx,
+            LLMRequest(
+                messages=[ChatMessage(role="user", content="只回复两个字：正常")],
+                model=settings.llm_model,
+                timeout_ms=15000,
+            ),
+            primary_model=settings.llm_model,
+            fallback_model=settings.llm_fallback_model,
+            max_retries=0,
+        )
+    except Exception as exc:  # noqa: BLE001 - 健康检查返回原因而不是抛错
+        return ok(
+            {
+                "configured": True,
+                "ok": False,
+                "model": settings.llm_model,
+                "latencyMs": int((time.perf_counter() - started) * 1000),
+                "message": str(exc)[:300],
+                "hint": "401 通常表示密钥失效或被轮换，请到 Command Code Studio 重新生成 API Key",
+            }
+        )
+
+    return ok(
+        {
+            "configured": True,
+            "ok": True,
+            "model": response.model,
+            "latencyMs": int((time.perf_counter() - started) * 1000),
+            "finishReason": response.finish_reason,
+            "content": response.content[:100],
+            "tokens": {"input": response.token_input, "output": response.token_output},
         }
     )
 

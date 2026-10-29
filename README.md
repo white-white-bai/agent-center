@@ -126,12 +126,28 @@ X-Trace-Id: trace_xxx
 | 评测 | `POST /api/v1/admin/eval-datasets`、`.../cases/import`（批量基线导入）、`POST /api/v1/admin/evaluations` |
 | 运营 | `GET /api/v1/admin/badcases`、`GET /api/v1/admin/audit-logs`、`GET /api/v1/admin/metrics/overview`、`GET .../metrics/prometheus`、`POST .../alerts/check` |
 | 提醒 | `POST /api/v1/notifications`、`POST /api/v1/admin/notifications/dispatch-due` |
-| 运维 | `POST /api/v1/admin/maintenance/purge-trace`（默认清理 90 天前轨迹） |
+| 运维 | `POST /api/v1/admin/maintenance/purge-trace`（默认清理 90 天前轨迹）、`GET /api/v1/admin/model/health`（真实调用一次模型自检） |
 
 ### SSE 事件
 
 `run.start`、`thinking`、`tool.call`、`tool.result`、`handoff`、`citation`、`confirmation.required`、`message.delta`、`message.end`、`error`。
 事件 id 形如 `run_id:seq`，断线后可用 `/events?lastEventId=run_id:seq` 增量重放。
+
+## 模型自检与 401 排查
+
+```bash
+curl http://localhost:8000/api/v1/admin/model/health \
+  -H "X-Tenant-Id: t1" -H "X-User-Id: admin" -H "X-Roles: admin"
+```
+
+返回 `ok=true` 表示密钥、地址与模型均可用；`ok=false` 时会附带原因和提示。
+
+若返回 `401 Invalid 'Authorization' header or token`：说明密钥被服务端判定失效。Command Code 在 2026-10-29 发生过密钥批量轮换/失效（见 [issue #1084](https://github.com/CommandCodeAI/command-code/issues/1084)），处理方式：
+
+1. 到 [Studio → API Keys](https://commandcode.ai/settings/keys) 新建 key，或执行 `cmdc login` 重新登录；
+2. 更新 `.env` 中的 `AC_LLM_API_KEY`；
+3. `docker compose up -d --force-recreate app` 让容器加载新密钥；
+4. 再次调用 `model/health` 确认 `ok=true`。
 
 ## 数据库建表
 
