@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./agent_center.db"
     db_echo: bool = False
     model_provider: str = "stub"
+    memory_extraction_enabled: bool = False
     stub_reply: str = '{"type":"final","answer":"这是桩模型的回复"}'
 
 
