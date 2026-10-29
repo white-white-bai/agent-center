@@ -1,12 +1,22 @@
+import json
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.tenant import TenantContext
 from app.domain.agent.models import AgentDefinition, AgentVersion
+from app.integrations.llm.client import ChatMessage, LLMRequest
 
 CONFIDENCE_THRESHOLD = 0.6
+
+ROUTE_PROMPT = """你是智能体路由器。只能从候选 Agent 中选择一个，或回答无法判断。
+用户输入：{message}
+候选 Agent：
+{candidates}
+只输出 JSON：{{"agent":"候选编码或空","confidence":0到1,"reason":"简短原因"}}
+"""
 
 
 @dataclass
@@ -78,6 +88,36 @@ def _score(agent: AgentDefinition, version: AgentVersion, message: str, channel:
     return score, True
 
 
+async def _model_select(
+    session: AsyncSession,
+    ctx: TenantContext,
+    router,
+    model: str,
+    message: str,
+    candidates: list[RouteCandidate],
+) -> tuple[str | None, float, str]:
+    listing = "\n".join(
+        f"- {item.agent_code}（领域 {item.domain_code}，规则得分 {item.score}）" for item in candidates
+    )
+    request = LLMRequest(
+        messages=[
+            ChatMessage(
+                role="user",
+                content=ROUTE_PROMPT.format(message=message, candidates=listing),
+            )
+        ],
+        model=model,
+        response_format={"type": "json_object"},
+    )
+    response = await router.complete(session, ctx, request, primary_model=model, max_retries=0)
+    payload = json.loads(response.content)
+    return (
+        payload.get("agent") or None,
+        max(0.0, min(1.0, float(payload.get("confidence") or 0.0))),
+        payload.get("reason") or "",
+    )
+
+
 async def route(
     session: AsyncSession,
     ctx: TenantContext,
@@ -85,8 +125,10 @@ async def route(
     message: str,
     channel: str | None = None,
     region: str | None = None,
+    router=None,
+    model: str | None = None,
 ) -> RouteResult:
-    """Supervisor 路由：硬规则过滤 → 候选召回 → 打分 → 服务端校验 → 澄清判断。"""
+    """Supervisor 路由：硬规则过滤 → 候选召回 → 规则打分 → 模型选择 → 服务端校验。"""
     agents = await _published_agents(session, ctx.tenant_id)
     candidates: list[RouteCandidate] = []
     for agent, version in agents:
@@ -118,6 +160,32 @@ async def route(
         )
 
     candidates.sort(key=lambda item: item.score, reverse=True)
+    allowed_codes = {item.agent_code for item in candidates}
+
+    if router is not None and len(candidates) > 1:
+        try:
+            selected, model_confidence, reason = await _model_select(
+                session,
+                ctx,
+                router,
+                model or get_settings().llm_model,
+                message,
+                candidates[:5],
+            )
+        except Exception:  # noqa: BLE001 - 模型路由失败回退规则
+            selected, model_confidence, reason = None, 0.0, ""
+        if selected in allowed_codes:
+            chosen = next(item for item in candidates if item.agent_code == selected)
+            return RouteResult(
+                selected_agent=chosen.agent_code,
+                domain_code=chosen.domain_code,
+                intent=None,
+                confidence=model_confidence,
+                reason_code="MODEL_SELECT",
+                need_clarification=model_confidence < CONFIDENCE_THRESHOLD,
+                candidates=candidates,
+            )
+
     top = candidates[0]
     if top.score <= 0:
         return RouteResult(

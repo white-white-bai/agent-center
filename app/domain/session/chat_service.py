@@ -67,6 +67,7 @@ async def resolve_agent(
     conversation: Conversation,
     agent_code: str | None,
     message: str = "",
+    router=None,
 ):
     if conversation.status not in {"ACTIVE", "WAITING_USER", "WAITING_CONFIRM"}:
         raise ConflictError(f"当前会话状态不允许发送消息: {conversation.status}")
@@ -84,6 +85,7 @@ async def resolve_agent(
         message=message,
         channel=conversation.channel,
         region=metadata.get("region_code"),
+        router=router,
     )
     if result.selected_agent is None or result.need_clarification:
         raise ConflictError("无法确定由哪个 Agent 处理，请补充业务领域或指定 agentCode")

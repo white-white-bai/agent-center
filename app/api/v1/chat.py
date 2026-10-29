@@ -62,7 +62,7 @@ async def send_message(
         session, ctx, conversation, payload.clientMessageId
     )
     agent, version = await chat_service.resolve_agent(
-        session, ctx, conversation, payload.agentCode, payload.message
+        session, ctx, conversation, payload.agentCode, payload.message, router=router
     )
     stream = chat_service.stream_message(
         session,
