@@ -72,6 +72,29 @@ async def transition(session: AsyncSession, ctx: TenantContext, version_id: int,
     version = await get_version(session, ctx, version_id)
     if not can_transition(version.status, target):
         raise ConflictError(f"提示词版本不能从 {version.status} 流转到 {target}")
+    if target == "PUBLISHED":
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        if settings.publish_require_eval:
+            from app.domain.evaluation.models import EvalRun
+
+            eval_result = await session.execute(
+                select(EvalRun).where(
+                    EvalRun.tenant_id == ctx.tenant_id,
+                    EvalRun.prompt_version_id == version.id,
+                    EvalRun.status == "SUCCESS",
+                )
+            )
+            eval_run = eval_result.scalars().first()
+            if eval_run is None:
+                raise ConflictError("发布前必须完成该提示词版本的评测")
+            accuracy = float((eval_run.metrics_json or {}).get("accuracy") or 0.0)
+            if accuracy < settings.publish_eval_min_accuracy:
+                raise ConflictError(
+                    f"评测通过率不足：{accuracy:.2%} < {settings.publish_eval_min_accuracy:.0%}"
+                )
+
     version.status = target
     if target == "PUBLISHED":
         version.published_at = datetime.utcnow()

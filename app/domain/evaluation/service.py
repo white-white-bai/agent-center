@@ -106,6 +106,8 @@ async def run_evaluation(
 
     passed = 0
     total_score = 0.0
+    citation_total = 0
+    citation_matched = 0
     for case in cases:
         response = await router.complete(
             session,
@@ -119,6 +121,20 @@ async def run_evaluation(
         if is_passed:
             passed += 1
         total_score += score
+
+        detail: dict = {}
+        expected_docs = [str(item) for item in (case.expected_doc_ids_json or [])]
+        if expected_docs:
+            from app.domain.knowledge.service import search as search_knowledge
+
+            results = await search_knowledge(session, ctx, query=case.question, top_k=5)
+            retrieved = [str(item["documentId"]) for item in results]
+            hit = bool(set(expected_docs) & set(retrieved))
+            citation_total += 1
+            if hit:
+                citation_matched += 1
+            detail = {"retrievedDocIds": retrieved, "citationHit": hit}
+
         session.add(
             EvalResult(
                 tenant_id=ctx.tenant_id,
@@ -127,6 +143,7 @@ async def run_evaluation(
                 score=round(score, 4),
                 passed=is_passed,
                 actual_answer=response.content,
+                detail_json=detail or None,
             )
         )
     total = len(cases)
@@ -135,6 +152,11 @@ async def run_evaluation(
         "passed": passed,
         "accuracy": round(passed / total, 4) if total else 0.0,
         "avgScore": round(total_score / total, 4) if total else 0.0,
+        "citation": {
+            "total": citation_total,
+            "matched": citation_matched,
+            "accuracy": round(citation_matched / citation_total, 4) if citation_total else None,
+        },
     }
     eval_run.status = "SUCCESS"
     eval_run.finished_at = datetime.utcnow()
