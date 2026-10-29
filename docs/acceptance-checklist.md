@@ -81,11 +81,16 @@ P1 全部完成：
 - B11 情节/程序记忆：每轮情节落库、工具链沉淀程序记忆
 - B12 绑定表：创建版本时同步，运行时优先使用绑定表
 
-剩余工作集中在 P0 外部依赖项（模型/审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、Critic、MCP 传输、OTel Span）。
+A1 真实模型联调进展：
+- 已配置真实密钥并通过 `GET /admin/model/health` 自检（`ok=true`）
+- 已完成单轮真实模型端到端对话：SSE 事件、最终回答、模型用量与 Run 记录均正确
+- 待补：50 条样本的决策 JSON 成功率统计、工具调用与降级模型的专项验证
+
+剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、Critic、MCP 传输、OTel Span）。
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 257 passed
+- 自动化测试：`python -m pytest -q` → 260 passed
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
 - 建表：容器内 MySQL `agent_center` 共 41 张表（已实测）
