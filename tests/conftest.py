@@ -1,4 +1,8 @@
+import os
 from collections.abc import AsyncIterator
+
+# 测试固定使用桩模型，避免读取本地 .env 中的真实密钥与外部网络依赖。
+os.environ["AC_MODEL_PROVIDER"] = "stub"
 
 import pytest
 from fastapi.testclient import TestClient

@@ -76,7 +76,7 @@ docker compose up -d --build
 | `AC_LLM_BASE_URL` | 空 | 模型网关地址，如 `https://api.commandcode.ai/provider/v1` |
 | `AC_LLM_API_KEY` | 空 | 模型密钥；为空时自动回退桩模型 |
 | `AC_LLM_MODEL` | `deepseek/deepseek-v4.1-flash` | 主模型 |
-| `AC_LLM_FALLBACK_MODEL` | `deepseek/deepseek-v4.1` | 降级模型 |
+| `AC_LLM_FALLBACK_MODEL` | `deepseek/deepseek-v4-flash` | 降级模型 |
 | `AC_EMBEDDING_MODEL` | 空 | Embedding 模型；为空时使用本地哈希向量 |
 | `AC_EMBEDDING_DIM` | `1024` | 向量维度，需与 Milvus 集合一致 |
 | `AC_REDIS_URL` | 空 | Redis 地址；为空时使用进程内锁/限流/事件流 |
@@ -141,6 +141,13 @@ curl http://localhost:8000/api/v1/admin/model/health \
 ```
 
 返回 `ok=true` 表示密钥、地址与模型均可用；`ok=false` 时会附带原因和提示。
+
+更完整的真实模型验证（50 条决策样本、流式、备用模型）：
+
+```bash
+docker cp scripts/validate_model.py agent-center-app:/tmp/validate_model.py
+docker compose exec -T app python /tmp/validate_model.py
+```
 
 若返回 `401 Invalid 'Authorization' header or token`：说明密钥被服务端判定失效。Command Code 在 2026-10-29 发生过密钥批量轮换/失效（见 [issue #1084](https://github.com/CommandCodeAI/command-code/issues/1084)），处理方式：
 

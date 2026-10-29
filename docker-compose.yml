@@ -57,7 +57,7 @@ services:
       AC_LLM_BASE_URL: ${AC_LLM_BASE_URL:-https://api.commandcode.ai/provider/v1}
       AC_LLM_API_KEY: ${AC_LLM_API_KEY:-}
       AC_LLM_MODEL: ${AC_LLM_MODEL:-deepseek/deepseek-v4.1-flash}
-      AC_LLM_FALLBACK_MODEL: ${AC_LLM_FALLBACK_MODEL:-deepseek/deepseek-v4.1}
+      AC_LLM_FALLBACK_MODEL: ${AC_LLM_FALLBACK_MODEL:-deepseek/deepseek-v4-flash}
       AC_EMBEDDING_MODEL: ${AC_EMBEDDING_MODEL:-}
       AC_CREDENTIAL_KEY: ${AC_CREDENTIAL_KEY:-dev-local-credential-key}
       AC_SENSITIVE_WORDS: ${AC_SENSITIVE_WORDS:-}
