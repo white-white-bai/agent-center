@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api.v1 import (
     agents,
     chat,
+    evaluations,
     knowledge,
     knowledge_sync,
     memory,
@@ -31,6 +32,7 @@ app.include_router(profile.router, prefix="/api/v1")
 app.include_router(routing.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(knowledge_sync.router, prefix="/api/v1")
+app.include_router(evaluations.router, prefix="/api/v1")
 
 
 @app.get("/healthz")
