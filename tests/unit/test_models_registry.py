@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "tool_invoke_log",
     "tool_idempotency_record",
     "tool_confirmation",
+    "tool_credential",
     "memory_item",
     "memory_episode",
     "memory_embedding",

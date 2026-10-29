@@ -152,6 +152,11 @@ async def invoke_tool(
     result = await executor.execute(tool_code=tool_code, arguments=arguments, context=tool_context)
     await resilience.record(limiter_key, success=result.ok)
 
+    from app.core.redaction import redact
+
+    safe_arguments = redact(arguments)
+    safe_summary = redact(str(result.output))[:2000] if result.output else result.error_message
+
     if tool.write_operation and tool.idempotent:
         record = await _load_idempotency_record(session, ctx, tool_code, tool_context.idempotency_key or "")
         if record is not None:
@@ -169,8 +174,8 @@ async def invoke_tool(
             tool_code=tool_code,
             user_id=ctx.user_id,
             status=result.status,
-            arguments_json=arguments,
-            result_summary=str(result.output)[:2000] if result.output else result.error_message,
+            arguments_json=safe_arguments,
+            result_summary=safe_summary,
             error_code=result.error_code,
             duration_ms=result.duration_ms,
             idempotency_key=tool_context.idempotency_key,

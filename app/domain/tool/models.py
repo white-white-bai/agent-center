@@ -66,6 +66,16 @@ class ToolIdempotencyRecord(Base, TenantMixin, TimestampMixin):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(3))
 
 
+class ToolCredential(Base, TenantMixin, TimestampMixin):
+    __tablename__ = "tool_credential"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    tool_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    key_version: Mapped[str] = mapped_column(String(20), nullable=False, default="v1")
+
+
 class ToolConfirmation(Base, TenantMixin, TimestampMixin):
     __tablename__ = "tool_confirmation"
 

@@ -29,6 +29,43 @@ class TestToolRequest(BaseModel):
     arguments: dict = Field(default_factory=dict)
 
 
+class CredentialRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1)
+
+
+@router.post("/{tool_code}/credentials")
+async def save_credential(
+    tool_code: str, payload: CredentialRequest, session: DbSession, ctx: CurrentTenant
+) -> dict:
+    from app.domain.tool import credentials
+
+    record = await credentials.save_credential(
+        session, ctx, tool_code=tool_code, name=payload.name, value=payload.value
+    )
+    return ok({"id": record.id, "name": record.name, "keyVersion": record.key_version})
+
+
+@router.get("/{tool_code}/credentials")
+async def list_credentials(tool_code: str, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.tool import credentials
+
+    records = await credentials.list_credentials(session, ctx, tool_code)
+    return ok(
+        [{"id": record.id, "name": record.name, "keyVersion": record.key_version} for record in records]
+    )
+
+
+@router.delete("/{tool_code}/credentials/{credential_id}")
+async def delete_credential(
+    tool_code: str, credential_id: int, session: DbSession, ctx: CurrentTenant
+) -> dict:
+    from app.domain.tool import credentials
+
+    await credentials.delete_credential(session, ctx, credential_id)
+    return ok({"deleted": True})
+
+
 def _serialize_tool(tool) -> dict:
     return {
         "id": tool.id,
