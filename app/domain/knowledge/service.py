@@ -430,7 +430,8 @@ async def search(
             continue
         if chunk.effective_to and chunk.effective_to < now:
             continue
-        content_tokens = _ngrams(chunk.content)
+        searchable = f"{chunk.title} {chunk.section or ''} {chunk.content}"
+        content_tokens = _ngrams(searchable)
         matched = len(tokens & content_tokens)
         keyword_score = matched / max(len(tokens), 1)
         vector_score = max(0.0, vector_hits.get(chunk.chunk_id, 0.0))

@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentTenant, DbSession, ModelRouterDep, ToolExecutorDep
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.responses import ok
 from app.domain.session import chat_service, service
 from app.domain.session.models import Run
@@ -61,9 +61,32 @@ async def send_message(
     duplicate = await chat_service.find_duplicate_reply(
         session, ctx, conversation, payload.clientMessageId
     )
-    agent, version = await chat_service.resolve_agent(
-        session, ctx, conversation, payload.agentCode, payload.message, router=router
-    )
+    try:
+        agent, version = await chat_service.resolve_agent(
+            session, ctx, conversation, payload.agentCode, payload.message, router=router
+        )
+    except AppError as exc:
+        if exc.code != "AC.ROUTE.NEED_CLARIFICATION":
+            raise
+        import json
+
+        message = exc.message
+
+        def _route_clarify():
+            yield (
+                "id: route:1\nevent: message.delta\n"
+                f"data: {json.dumps({'runId': None, 'seq': 1, 'content': message}, ensure_ascii=False)}\n\n"
+            )
+            yield (
+                "id: route:2\nevent: message.end\n"
+                f"data: {json.dumps({'runId': None, 'finishReason': 'waiting_user'}, ensure_ascii=False)}\n\n"
+            )
+
+        return StreamingResponse(
+            _route_clarify(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     stream = chat_service.stream_message(
         session,
         ctx,

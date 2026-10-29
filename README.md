@@ -142,6 +142,15 @@ curl http://localhost:8000/api/v1/admin/model/health \
 
 返回 `ok=true` 表示密钥、地址与模型均可用；`ok=false` 时会附带原因和提示。
 
+业务问题端到端抽样（自动建独立租户、知识库与 Agent，输出逐题明细与汇总）：
+
+```bash
+docker cp scripts/e2e_sample.py agent-center-app:/tmp/e2e_sample.py
+docker compose exec -T app python /tmp/e2e_sample.py
+```
+
+最近一次结果见 [docs/e2e-sample-report.md](docs/e2e-sample-report.md)。
+
 更完整的真实模型验证（50 条决策样本、流式、备用模型）：
 
 ```bash

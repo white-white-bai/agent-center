@@ -88,8 +88,13 @@ async def resolve_agent(
         region=metadata.get("region_code"),
         router=router,
     )
+    if result.reason_code == "NO_CANDIDATE":
+        raise ConflictError("租户下没有已发布的 Agent，无法处理消息")
     if result.selected_agent is None or result.need_clarification:
-        raise ConflictError("无法确定由哪个 Agent 处理，请补充业务领域或指定 agentCode")
+        raise ConflictError(
+            "还无法确定由哪个业务助手处理，请补充您要咨询的业务领域（例如区级办事、公共资源交易）。",
+            code="AC.ROUTE.NEED_CLARIFICATION",
+        )
     return await get_published_version(session, ctx, result.selected_agent)
 
 

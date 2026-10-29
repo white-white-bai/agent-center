@@ -46,9 +46,13 @@ SYSTEM_TEMPLATE = """你是{role}。
 5. 交接其他 Agent：{{"type":"handoff","to":"目标 Agent 编码","reason":"原因"}}
 6. 话题切换/恢复：{{"type":"topic","action":"switch","topic":"新话题"}} 或 {{"type":"topic","action":"resume"}}
 7. 并行只读工具：{{"type":"fanout","tasks":[{{"tool":"工具编码","arguments":{{}}}}, ...]}}
+8. 记录槽位后继续：当用户提供了必填槽位值时，先记录再继续处理。
 可用工具：{tools}
 必填槽位：{required_slots}
 当前会话状态：{session_state}
+
+规则：当用户消息中提供了必填槽位的值时，必须先输出 slots 决策记录槽位；
+必填槽位仍缺失时，优先输出 clarify 追问缺失项。
 """
 
 TERMINAL_STATUSES = {"COMPLETED", "WAITING_USER", "WAITING_CONFIRM", "HANDOFF", "INTERRUPTED", "FAILED"}
