@@ -65,9 +65,20 @@
 5. 一次回滚演练通过：Agent/提示词可回滚到上一发布版本，知识版本可回退。
 6. 无 P0 级安全问题：跨租户、越权工具、伪造确认、重复写、敏感信息泄露。
 
-## 六、当前可用证据
+## 六、当前进度（增量）
 
-- 自动化测试：`python -m pytest -q` → 221 passed
+已完成（本轮）：
+- B1 话题栈接线：`topic` 决策支持 switch/resume，状态持久化
+- B3 OpenAPI 导入：预览与自动注册，重复编码跳过
+- B4 凭证自动取用：按 `credential_map` 解密注入请求头
+- B5 会话查询：`GET /admin/sessions`，筛选与分页
+- B9 SSE 续流：`.../runs/{runId}/stream?lastEventId=`
+
+剩余 P1：B2 Fan-out 接入运行时、B6 Prometheus/OTel 与告警、B7 引用准确率与发布门禁、B8 审计全覆盖、B10 知识版本管理、B11 情节/程序记忆、B12 绑定表启用。
+
+## 七、当前可用证据
+
+- 自动化测试：`python -m pytest -q` → 236 passed
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
 - 建表：容器内 MySQL `agent_center` 共 41 张表（已实测）

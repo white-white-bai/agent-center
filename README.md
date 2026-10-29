@@ -109,12 +109,13 @@ X-Trace-Id: trace_xxx
 | 会话 | `POST /api/v1/chat/sessions`、`GET /api/v1/chat/sessions/{id}` |
 | 对话 | `POST /api/v1/chat/sessions/{id}/messages`（SSE）、`POST .../interrupt` |
 | 确认 | `POST /api/v1/chat/sessions/{id}/confirmations/{cid}` |
-| 轨迹 | `GET /api/v1/chat/sessions/{id}/runs/{runId}`、`.../events?lastEventId=` |
+| 轨迹 | `GET /api/v1/chat/sessions/{id}/runs/{runId}`、`.../events?lastEventId=`、`.../stream?lastEventId=` |
+| 会话管理 | `GET /api/v1/admin/sessions`（用户/状态/时间/分页） |
 | 恢复 | `POST /api/v1/chat/sessions/{id}/runs/{runId}/resume` |
 | 反馈 | `POST /api/v1/feedback` |
 | Agent | `GET/POST /api/v1/admin/agents`、`.../{id}/versions`、`.../{id}/publish` |
 | 提示词 | `POST /api/v1/admin/prompts`、`.../{id}/versions`、`.../transition` |
-| 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test` |
+| 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、凭证管理 |
 | 知识 | `POST /api/v1/admin/knowledge-spaces`、`.../documents`、`.../publish`、`POST /api/v1/knowledge/search` |
 | 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks` |
 | 记忆/画像 | `GET /api/v1/memory`、`GET /api/v1/profile/summary`、`GET /api/v1/profile/suggestions` |
