@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.v1 import agents, chat, memory, operations, profile, prompts, routing, tools
+from app.api.v1 import agents, chat, knowledge, memory, operations, profile, prompts, routing, tools
 from app.core.logging import configure_logging
 from app.core.middleware import install_exception_handlers, install_trace_middleware
 
@@ -18,6 +18,7 @@ app.include_router(operations.router, prefix="/api/v1")
 app.include_router(memory.router, prefix="/api/v1")
 app.include_router(profile.router, prefix="/api/v1")
 app.include_router(routing.router, prefix="/api/v1")
+app.include_router(knowledge.router, prefix="/api/v1")
 
 
 @app.get("/healthz")

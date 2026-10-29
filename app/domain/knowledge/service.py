@@ -1,0 +1,282 @@
+import hashlib
+import re
+from datetime import datetime
+from uuid import uuid4
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import ConflictError, NotFoundError
+from app.core.tenant import TenantContext
+from app.domain.knowledge.models import (
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeRouteRule,
+    KnowledgeSpace,
+)
+
+HEADING_PATTERN = re.compile(r"^(#{1,6}\s+.+|第[一二三四五六七八九十百]+[章节条]\s*.+|[\u4e00-\u9fff]{1,20}、)$")
+
+
+def content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def split_text(text: str, *, max_chars: int = 300, overlap: int = 50) -> list[dict]:
+    """按段落与标题切分，尽量保持条款完整。"""
+    paragraphs = [item.strip() for item in re.split(r"\n\s*\n", text) if item.strip()]
+    chunks: list[dict] = []
+    current = ""
+    section = ""
+    section_before = ""
+    for paragraph in paragraphs:
+        first_line = paragraph.splitlines()[0].strip()
+        if HEADING_PATTERN.match(first_line):
+            section = first_line.lstrip("#").strip()
+            if current:
+                chunks.append({"section": section_before, "content": current[:max_chars]})
+                current = ""
+            section_before = section
+            current = paragraph
+            continue
+        if len(current) + len(paragraph) + 1 <= max_chars:
+            current = f"{current}\n{paragraph}".strip()
+            continue
+        if current:
+            chunks.append({"section": section_before, "content": current[:max_chars]})
+        tail = current[-overlap:] if current and overlap else ""
+        current = f"{tail}\n{paragraph}".strip()
+        section_before = section
+        while len(current) > max_chars:
+            chunks.append({"section": section_before, "content": current[:max_chars]})
+            current = current[max_chars - overlap :]
+    if current:
+        chunks.append({"section": section_before or section, "content": current[:max_chars]})
+    return chunks
+
+
+async def create_space(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    code: str,
+    name: str,
+    layer: str = "DOMAIN",
+    domain_code: str | None = None,
+) -> KnowledgeSpace:
+    space = KnowledgeSpace(
+        tenant_id=ctx.tenant_id,
+        code=code,
+        name=name,
+        layer=layer,
+        domain_code=domain_code,
+    )
+    session.add(space)
+    await session.commit()
+    await session.refresh(space)
+    return space
+
+
+async def get_space(session: AsyncSession, ctx: TenantContext, space_id: int) -> KnowledgeSpace:
+    result = await session.execute(
+        select(KnowledgeSpace).where(
+            KnowledgeSpace.id == space_id, KnowledgeSpace.tenant_id == ctx.tenant_id
+        )
+    )
+    space = result.scalar_one_or_none()
+    if space is None:
+        raise NotFoundError("知识空间不存在")
+    return space
+
+
+async def ingest_document(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    space_id: int,
+    title: str,
+    content: str,
+    region_code: str | None = None,
+    authority_level: int = 3,
+    effective_from: datetime | None = None,
+    effective_to: datetime | None = None,
+    source_url: str | None = None,
+    document_code: str | None = None,
+) -> KnowledgeDocument:
+    space = await get_space(session, ctx, space_id)
+    document = KnowledgeDocument(
+        tenant_id=ctx.tenant_id,
+        space_id=space.id,
+        document_code=document_code or f"doc_{uuid4().hex[:12]}",
+        title=title,
+        version_no=1,
+        status="DRAFT",
+        region_code=region_code,
+        authority_level=authority_level,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        source_url=source_url,
+        content_hash=content_hash(content),
+    )
+    session.add(document)
+    await session.commit()
+    await session.refresh(document)
+
+    for index, chunk in enumerate(split_text(content)):
+        session.add(
+            KnowledgeChunk(
+                tenant_id=ctx.tenant_id,
+                chunk_id=f"chunk_{document.id}_{index}_{uuid4().hex[:6]}",
+                document_id=document.id,
+                document_version=document.version_no,
+                title=title,
+                section=chunk["section"],
+                content=chunk["content"],
+                domain_code=space.domain_code,
+                region_code=region_code,
+                effective_from=effective_from,
+                effective_to=effective_to,
+                authority_level=authority_level,
+                source_url=source_url,
+                content_hash=content_hash(chunk["content"]),
+                status="DRAFT",
+            )
+        )
+    await session.commit()
+    return document
+
+
+async def publish_document(session: AsyncSession, ctx: TenantContext, document_id: int) -> KnowledgeDocument:
+    result = await session.execute(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.id == document_id, KnowledgeDocument.tenant_id == ctx.tenant_id
+        )
+    )
+    document = result.scalar_one_or_none()
+    if document is None:
+        raise NotFoundError("知识文档不存在")
+    if document.status == "PUBLISHED":
+        raise ConflictError("文档已发布")
+
+    chunks = await session.execute(
+        select(KnowledgeChunk).where(
+            KnowledgeChunk.document_id == document.id,
+            KnowledgeChunk.tenant_id == ctx.tenant_id,
+        )
+    )
+    chunk_list = list(chunks.scalars().all())
+    if not chunk_list:
+        raise ConflictError("文档没有可用切片，不能发布")
+    for chunk in chunk_list:
+        chunk.status = "ACTIVE"
+    document.status = "PUBLISHED"
+    await session.commit()
+    await session.refresh(document)
+    return document
+
+
+def _ngrams(text: str, size: int = 2) -> set[str]:
+    cleaned = re.sub(r"\s+", "", text)
+    if len(cleaned) <= size:
+        return {cleaned} if cleaned else set()
+    return {cleaned[index : index + size] for index in range(len(cleaned) - size + 1)}
+
+
+async def _resolve_space_ids(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    query: str,
+    domain_code: str | None,
+    space_ids: list[int] | None,
+) -> list[int] | None:
+    if space_ids:
+        return space_ids
+    result = await session.execute(
+        select(KnowledgeRouteRule)
+        .where(KnowledgeRouteRule.tenant_id == ctx.tenant_id)
+        .order_by(KnowledgeRouteRule.priority.desc())
+    )
+    for rule in result.scalars().all():
+        if domain_code and rule.domain_code != domain_code:
+            continue
+        if any(keyword and keyword in query for keyword in (rule.intent_keywords_json or [])):
+            return list(rule.space_ids_json or [])
+    if domain_code:
+        spaces = await session.execute(
+            select(KnowledgeSpace.id).where(
+                KnowledgeSpace.tenant_id == ctx.tenant_id,
+                KnowledgeSpace.domain_code == domain_code,
+            )
+        )
+        return list(spaces.scalars().all())
+    return None
+
+
+async def search(
+    session: AsyncSession,
+    ctx: TenantContext,
+    *,
+    query: str,
+    domain_code: str | None = None,
+    region_code: str | None = None,
+    space_ids: list[int] | None = None,
+    top_k: int = 5,
+) -> list[dict]:
+    """混合检索首期实现：关键词 n-gram 打分 + 地域/有效期/权限过滤 + 权威度排序。"""
+    now = datetime.utcnow()
+    resolved_space_ids = await _resolve_space_ids(
+        session, ctx, query=query, domain_code=domain_code, space_ids=space_ids
+    )
+    query_stmt = select(KnowledgeChunk, KnowledgeDocument).join(
+        KnowledgeDocument, KnowledgeDocument.id == KnowledgeChunk.document_id
+    ).where(
+        KnowledgeChunk.tenant_id == ctx.tenant_id,
+        KnowledgeChunk.status == "ACTIVE",
+        KnowledgeDocument.status == "PUBLISHED",
+    )
+    if resolved_space_ids is not None:
+        query_stmt = query_stmt.where(KnowledgeDocument.space_id.in_(resolved_space_ids))
+    if region_code:
+        query_stmt = query_stmt.where(
+            (KnowledgeChunk.region_code.is_(None)) | (KnowledgeChunk.region_code == region_code)
+        )
+    if domain_code:
+        query_stmt = query_stmt.where(
+            (KnowledgeChunk.domain_code.is_(None)) | (KnowledgeChunk.domain_code == domain_code)
+        )
+
+    rows = (await session.execute(query_stmt)).all()
+    tokens = _ngrams(query)
+    scored: list[tuple[float, KnowledgeChunk, KnowledgeDocument]] = []
+    for chunk, document in rows:
+        if chunk.effective_from and chunk.effective_from > now:
+            continue
+        if chunk.effective_to and chunk.effective_to < now:
+            continue
+        content_tokens = _ngrams(chunk.content)
+        matched = len(tokens & content_tokens)
+        if tokens and matched == 0:
+            continue
+        score = (matched / max(len(tokens), 1)) + document.authority_level / 100
+        scored.append((score, chunk, document))
+
+    scored.sort(key=lambda item: (item[0], item[2].authority_level), reverse=True)
+    results: list[dict] = []
+    for score, chunk, document in scored[:top_k]:
+        results.append(
+            {
+                "chunkId": chunk.chunk_id,
+                "documentId": str(document.id),
+                "documentVersion": chunk.document_version,
+                "title": chunk.title,
+                "section": chunk.section,
+                "content": chunk.content,
+                "sourceUrl": chunk.source_url,
+                "regionCode": chunk.region_code,
+                "authorityLevel": document.authority_level,
+                "score": round(score, 4),
+                "effectiveStatus": "active",
+            }
+        )
+    return results
