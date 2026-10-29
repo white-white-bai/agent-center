@@ -70,6 +70,8 @@ async def list_agents(session: DbSession, ctx: CurrentTenant) -> dict:
 
 @router.post("")
 async def create_agent(payload: CreateAgentRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.evaluation import audit
+
     agent = await service.create_agent(
         session,
         ctx,
@@ -77,6 +79,14 @@ async def create_agent(payload: CreateAgentRequest, session: DbSession, ctx: Cur
         name=payload.name,
         domain_code=payload.domain_code,
         description=payload.description,
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="agent.create",
+        resource_type="agent",
+        resource_id=agent.id,
+        detail={"code": agent.code, "domainCode": agent.domain_code},
     )
     return ok(_serialize_agent(agent))
 
@@ -96,6 +106,8 @@ async def create_version(
         "required_slots": payload.required_slots,
         "slot_questions": payload.slot_questions,
     }
+    from app.domain.evaluation import audit
+
     version = await service.create_version(
         session,
         ctx,
@@ -105,6 +117,14 @@ async def create_version(
         tool_bindings=payload.tools,
         knowledge_scopes=payload.knowledge_scopes,
         prompt_version_id=payload.prompt_version_id,
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="agent.version.create",
+        resource_type="agent_version",
+        resource_id=version.id,
+        detail={"agentId": agent_id, "versionNo": version.version_no},
     )
     return ok(_serialize_version(version))
 

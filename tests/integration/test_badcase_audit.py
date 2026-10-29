@@ -78,7 +78,11 @@ async def test_audit_log_records_sensitive_actions(async_client) -> None:
         headers=HEADERS,
     )
 
-    logs = (await async_client.get("/api/v1/admin/audit-logs", headers=HEADERS)).json()["data"]
+    logs = (
+        await async_client.get(
+            "/api/v1/admin/audit-logs", params={"action": "agent.publish"}, headers=HEADERS
+        )
+    ).json()["data"]
 
     assert len(logs) == 1
     assert logs[0]["action"] == "agent.publish"

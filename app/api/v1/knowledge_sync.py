@@ -28,6 +28,16 @@ async def create_sync_task(payload: CreateSyncTaskRequest, session: DbSession, c
     )
     if payload.documents is not None:
         task = await sync.run_sync_task(session, ctx, task, documents=payload.documents)
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="knowledge.sync.create",
+        resource_type="knowledge_sync_task",
+        resource_id=task.id,
+        detail={"spaceId": payload.spaceId, "sourceType": payload.sourceType, "status": task.status},
+    )
     return ok(
         {
             "id": task.id,

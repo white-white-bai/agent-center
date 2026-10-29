@@ -37,8 +37,18 @@ def _serialize_version(version) -> dict:
 
 @router.post("")
 async def create_template(payload: CreateTemplateRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.evaluation import audit
+
     template = await repository.create_template(
         session, ctx, code=payload.code, name=payload.name, layer=payload.layer
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="prompt.create",
+        resource_type="prompt_template",
+        resource_id=template.id,
+        detail={"code": template.code, "layer": template.layer},
     )
     return ok({"id": template.id, "code": template.code, "name": template.name, "layer": template.layer})
 
@@ -47,7 +57,17 @@ async def create_template(payload: CreateTemplateRequest, session: DbSession, ct
 async def create_version(
     template_id: int, payload: CreateVersionRequest, session: DbSession, ctx: CurrentTenant
 ) -> dict:
+    from app.domain.evaluation import audit
+
     version = await repository.create_draft(session, ctx, template_id, content=payload.content)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="prompt.version.create",
+        resource_type="prompt_version",
+        resource_id=version.id,
+        detail={"templateId": template_id, "versionNo": version.version_no},
+    )
     return ok(_serialize_version(version))
 
 

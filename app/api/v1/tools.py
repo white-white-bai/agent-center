@@ -45,6 +45,8 @@ async def import_openapi(payload: ImportOpenApiRequest, session: DbSession, ctx:
     from app.integrations.openapi import parse_openapi
 
     parsed = parse_openapi(payload.spec)
+    from app.domain.evaluation import audit
+
     if not parsed:
         return ok({"total": 0, "created": [], "skipped": [], "preview": []})
 
@@ -73,6 +75,13 @@ async def import_openapi(payload: ImportOpenApiRequest, session: DbSession, ctx:
             )
             created.append(item["tool_code"])
 
+    await audit.record_audit(
+        session,
+        ctx,
+        action="tool.import_openapi",
+        resource_type="tool",
+        detail={"total": len(parsed), "created": created, "skipped": skipped},
+    )
     return ok(
         {
             "total": len(parsed),
@@ -99,8 +108,18 @@ async def save_credential(
 ) -> dict:
     from app.domain.tool import credentials
 
+    from app.domain.evaluation import audit
+
     record = await credentials.save_credential(
         session, ctx, tool_code=tool_code, name=payload.name, value=payload.value
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="tool.credential.save",
+        resource_type="tool_credential",
+        resource_id=record.id,
+        detail={"toolCode": tool_code, "name": record.name},
     )
     return ok({"id": record.id, "name": record.name, "keyVersion": record.key_version})
 
@@ -121,7 +140,17 @@ async def delete_credential(
 ) -> dict:
     from app.domain.tool import credentials
 
+    from app.domain.evaluation import audit
+
     await credentials.delete_credential(session, ctx, credential_id)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="tool.credential.delete",
+        resource_type="tool_credential",
+        resource_id=credential_id,
+        detail={"toolCode": tool_code},
+    )
     return ok({"deleted": True})
 
 

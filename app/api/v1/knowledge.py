@@ -38,6 +38,8 @@ class SearchRequest(BaseModel):
 
 @router.post("/admin/knowledge-spaces")
 async def create_space(payload: CreateSpaceRequest, session: DbSession, ctx: AdminContext) -> dict:
+    from app.domain.evaluation import audit
+
     space = await service.create_space(
         session,
         ctx,
@@ -45,6 +47,14 @@ async def create_space(payload: CreateSpaceRequest, session: DbSession, ctx: Adm
         name=payload.name,
         layer=payload.layer,
         domain_code=payload.domainCode,
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="knowledge.space.create",
+        resource_type="knowledge_space",
+        resource_id=space.id,
+        detail={"code": space.code, "layer": space.layer},
     )
     return ok({"id": space.id, "code": space.code, "name": space.name, "layer": space.layer})
 
@@ -65,6 +75,16 @@ async def create_document(
         effective_to=payload.effectiveTo,
         source_url=payload.sourceUrl,
         document_code=payload.documentCode,
+    )
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="knowledge.document.create",
+        resource_type="knowledge_document",
+        resource_id=document.id,
+        detail={"spaceId": space_id, "title": document.title},
     )
     return ok({"id": document.id, "title": document.title, "status": document.status})
 

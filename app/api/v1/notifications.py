@@ -49,4 +49,13 @@ async def cancel_notification(notification_id: int, session: DbSession, ctx: Cur
 @router.post("/admin/notifications/dispatch-due")
 async def dispatch_due(session: DbSession, ctx: AdminContext) -> dict:
     items = await service.dispatch_due(session, ctx)
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="notification.dispatch",
+        resource_type="notification",
+        detail={"dispatched": len(items), "ids": [item.id for item in items]},
+    )
     return ok({"dispatched": len(items), "ids": [item.id for item in items]})

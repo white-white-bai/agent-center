@@ -32,8 +32,18 @@ class RunEvaluationRequest(BaseModel):
 
 @router.post("/eval-datasets")
 async def create_dataset(payload: CreateDatasetRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.domain.evaluation import audit
+
     dataset = await service.create_dataset(
         session, ctx, code=payload.code, name=payload.name, domain_code=payload.domainCode
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="eval.dataset.create",
+        resource_type="eval_dataset",
+        resource_id=dataset.id,
+        detail={"code": dataset.code},
     )
     return ok({"id": dataset.id, "code": dataset.code, "name": dataset.name})
 
@@ -42,6 +52,8 @@ async def create_dataset(payload: CreateDatasetRequest, session: DbSession, ctx:
 async def create_case(
     dataset_id: int, payload: CreateCaseRequest, session: DbSession, ctx: CurrentTenant
 ) -> dict:
+    from app.domain.evaluation import audit
+
     case = await service.add_case(
         session,
         ctx,
@@ -50,6 +62,14 @@ async def create_case(
         expected_answer=payload.expectedAnswer,
         expected_doc_ids=payload.expectedDocIds,
         tags=payload.tags,
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="eval.case.create",
+        resource_type="eval_case",
+        resource_id=case.id,
+        detail={"datasetId": dataset_id},
     )
     return ok({"id": case.id, "question": case.question})
 
@@ -76,6 +96,15 @@ async def import_cases(
             tags=item.tags or ["baseline"],
         )
         created.append(case.id)
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="eval.cases.import",
+        resource_type="eval_case",
+        detail={"datasetId": dataset_id, "imported": len(created)},
+    )
     return ok({"imported": len(created), "caseIds": created})
 
 
@@ -92,6 +121,16 @@ async def run_evaluation(
         prompt_version_id=payload.promptVersionId,
         agent_version_id=payload.agentVersionId,
         pass_threshold=payload.passThreshold,
+    )
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="eval.run",
+        resource_type="eval_run",
+        resource_id=eval_run.id,
+        detail={"datasetId": payload.datasetId, "metrics": eval_run.metrics_json},
     )
     return ok(
         {

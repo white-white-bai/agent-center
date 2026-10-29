@@ -93,8 +93,17 @@ class PurgeTraceRequest(BaseModel):
 @router.post("/admin/maintenance/purge-trace")
 async def purge_trace(payload: PurgeTraceRequest, session: DbSession, ctx: AdminContext) -> dict:
     from app.workers.retention import purge_trace as purge
+    from app.domain.evaluation import audit
 
-    return ok(await purge(session, ctx, days=payload.days))
+    result = await purge(session, ctx, days=payload.days)
+    await audit.record_audit(
+        session,
+        ctx,
+        action="maintenance.purge_trace",
+        resource_type="trace",
+        detail=result,
+    )
+    return ok(result)
 
 
 @router.get("/admin/sessions")
