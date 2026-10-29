@@ -165,4 +165,4 @@ AGENTS.md          编码代理与开发约定
 ## 待确认事项
 
 见 [docs/open-questions.md](docs/open-questions.md)，包含模型来源、认证接口、向量库、Redis 限流与锁、管理前端等问题。
-开发约定与命令见 [AGENTS.md](AGENTS.md)。
+交付验收标准与差距清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)，开发约定与命令见 [AGENTS.md](AGENTS.md)。
