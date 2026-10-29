@@ -7,6 +7,7 @@ from app.api.v1 import (
     knowledge,
     knowledge_sync,
     memory,
+    notifications,
     operations,
     profile,
     prompts,
@@ -33,6 +34,7 @@ app.include_router(routing.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(knowledge_sync.router, prefix="/api/v1")
 app.include_router(evaluations.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
 
 
 @app.get("/healthz")

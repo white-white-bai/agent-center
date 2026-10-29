@@ -42,6 +42,7 @@ EXPECTED_TABLES = {
     "feedback",
     "badcase",
     "audit_log",
+    "notification",
 }
 
 

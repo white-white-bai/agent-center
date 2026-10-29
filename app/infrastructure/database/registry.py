@@ -3,6 +3,7 @@ from app.domain.evaluation import models as evaluation_models  # noqa: F401
 from app.domain.knowledge import models as knowledge_models  # noqa: F401
 from app.domain.memory import models as memory_models  # noqa: F401
 from app.domain.model import models as model_models  # noqa: F401
+from app.domain.notification import models as notification_models  # noqa: F401
 from app.domain.profile import models as profile_models  # noqa: F401
 from app.domain.prompt import models as prompt_models  # noqa: F401
 from app.domain.session import models as session_models  # noqa: F401
