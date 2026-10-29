@@ -102,6 +102,7 @@ class ReActExecutor:
         self._started = 0.0
         self._ctx: TenantContext | None = None
         self._run_ctx: RunContext | None = None
+        self._step_seq = 0
 
     async def _emit(self, event: dict[str, Any]) -> None:
         if self.on_event is not None:
@@ -113,6 +114,7 @@ class ReActExecutor:
         self._started = time.monotonic()
         self._ctx = ctx
         self._run_ctx = run_ctx
+        self._step_seq = 0
 
         system_prompt = run_ctx.system_prompt or build_system_prompt(
             run_ctx.agent_config, run_ctx.allowed_tools
@@ -534,11 +536,12 @@ class ReActExecutor:
     ) -> None:
         from app.domain.session.models import RunStep
 
+        self._step_seq += 1
         self.session.add(
             RunStep(
                 tenant_id=ctx.tenant_id,
                 run_id=run_ctx.run_id,
-                step_no=step_no,
+                step_no=self._step_seq,
                 step_type=step_type,
                 status=status,
                 output_summary=summary,

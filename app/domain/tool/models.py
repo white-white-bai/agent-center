@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
@@ -8,6 +8,9 @@ from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, Timest
 
 class ToolDefinition(Base, TenantMixin, TimestampMixin):
     __tablename__ = "tool_definition"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "tool_code", "version_no", name="uk_tool_tenant_code_version"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     tool_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)

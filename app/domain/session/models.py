@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
@@ -23,6 +23,9 @@ class Conversation(Base, TenantMixin, TimestampMixin):
 
 class ConversationTurn(Base, TenantMixin, TimestampMixin):
     __tablename__ = "conversation_turn"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "turn_no", name="uk_turn_conversation_no"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
@@ -74,6 +77,7 @@ class Run(Base, TenantMixin):
 
 class RunStep(Base, TenantMixin):
     __tablename__ = "run_step"
+    __table_args__ = (UniqueConstraint("run_id", "step_no", name="uk_run_step_no"),)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

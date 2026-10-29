@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
@@ -8,6 +8,7 @@ from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, Timest
 
 class AgentDefinition(Base, TenantMixin, TimestampMixin):
     __tablename__ = "agent_definition"
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uk_agent_tenant_code"),)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     code: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -20,6 +21,7 @@ class AgentDefinition(Base, TenantMixin, TimestampMixin):
 
 class AgentVersion(Base, TenantMixin, TimestampMixin):
     __tablename__ = "agent_version"
+    __table_args__ = (UniqueConstraint("agent_id", "version_no", name="uk_agent_version"),)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     agent_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)

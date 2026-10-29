@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
@@ -8,6 +8,7 @@ from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, Timest
 
 class EvalDataset(Base, TenantMixin, TimestampMixin):
     __tablename__ = "eval_dataset"
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uk_eval_dataset_tenant_code"),)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)

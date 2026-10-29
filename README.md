@@ -66,6 +66,11 @@ X-Trace-Id: trace_xxx
 `run.start`、`thinking`、`tool.call`、`tool.result`、`handoff`、`citation`、`confirmation.required`、`message.delta`、`message.end`、`error`。
 事件 id 形如 `run_id:seq`，断线后可用 `/events?lastEventId=run_id:seq` 增量重放。
 
+## 数据库建表
+
+生产环境关闭自动建表（`AC_AUTO_CREATE_TABLES=false`），由 DBA 执行 `docs/schema-mysql.sql`。
+模型变更后可用 `python scripts/export_ddl.py` 重新生成。
+
 ## 开发与测试
 
 ```bash
