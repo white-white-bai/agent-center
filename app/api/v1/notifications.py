@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentTenant, DbSession
+from app.api.deps import AdminContext, CurrentTenant, DbSession
 from app.core.responses import ok
 from app.domain.notification import service
 
@@ -47,6 +47,6 @@ async def cancel_notification(notification_id: int, session: DbSession, ctx: Cur
 
 
 @router.post("/admin/notifications/dispatch-due")
-async def dispatch_due(session: DbSession, ctx: CurrentTenant) -> dict:
+async def dispatch_due(session: DbSession, ctx: AdminContext) -> dict:
     items = await service.dispatch_due(session, ctx)
     return ok({"dispatched": len(items), "ids": [item.id for item in items]})

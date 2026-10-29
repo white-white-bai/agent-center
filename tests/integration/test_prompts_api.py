@@ -69,7 +69,7 @@ def test_prompt_template_is_tenant_isolated(client) -> None:
     response = client.post(
         f"/api/v1/admin/prompts/{template_id}/versions",
         json={"content": "hi"},
-        headers={"X-Tenant-Id": "t2", "X-User-Id": "admin2"},
+        headers={"X-Tenant-Id": "t2", "X-User-Id": "admin2", "X-Roles": "admin"},
     )
 
     assert response.status_code == 404

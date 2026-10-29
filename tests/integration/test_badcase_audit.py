@@ -120,7 +120,7 @@ async def test_audit_logs_are_filtered_and_tenant_isolated(async_client) -> None
     other_tenant = (
         await async_client.get(
             "/api/v1/admin/audit-logs",
-            headers={"X-Tenant-Id": "t2", "X-User-Id": "admin2"},
+            headers={"X-Tenant-Id": "t2", "X-User-Id": "admin2", "X-Roles": "admin"},
         )
     ).json()["data"]
     assert other_tenant == []

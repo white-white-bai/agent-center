@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 
-from fastapi import Header
+from fastapi import Depends, Header
 
-from app.core.exceptions import AuthError
+from app.core.exceptions import AuthError, ForbiddenError
 
 
 @dataclass(frozen=True)
@@ -46,3 +46,14 @@ async def get_tenant_context(
         permissions=_split_header(x_permissions),
         data_scopes=_split_header(x_data_scopes),
     )
+
+
+async def require_admin(ctx: TenantContext = Depends(get_tenant_context)) -> TenantContext:
+    """管理接口必须由管理员角色或 admin 权限调用。"""
+    if not (
+        ctx.has_role("admin")
+        or ctx.has_permission("admin")
+        or ctx.has_permission("admin:write")
+    ):
+        raise ForbiddenError("需要管理员权限")
+    return ctx

@@ -93,7 +93,18 @@ def test_agent_is_tenant_isolated(client) -> None:
     response = client.post(
         f"/api/v1/admin/agents/{agent_id}/publish",
         json={"version_id": version_id},
-        headers={"X-Tenant-Id": "t2", "X-User-Id": "other"},
+        headers={"X-Tenant-Id": "t2", "X-User-Id": "other", "X-Roles": "admin"},
     )
 
     assert response.status_code == 404
+
+
+def test_non_admin_cannot_manage_agents(client) -> None:
+    response = client.post(
+        "/api/v1/admin/agents",
+        json={"code": "forbidden", "name": "无权限", "domain_code": "d"},
+        headers={"X-Tenant-Id": "t1", "X-User-Id": "u1"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "AC.AUTH.FORBIDDEN"

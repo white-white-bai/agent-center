@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentTenant, DbSession
+from app.api.deps import AdminContext, CurrentTenant, DbSession
 from app.core.responses import ok
 from app.domain.session import run_service, service
 
@@ -17,14 +17,14 @@ async def get_session_run(session_id: int, run_id: str, session: DbSession, ctx:
 
 
 @router.get("/admin/runs/{run_id}")
-async def get_run_admin(run_id: str, session: DbSession, ctx: CurrentTenant) -> dict:
+async def get_run_admin(run_id: str, session: DbSession, ctx: AdminContext) -> dict:
     run = await run_service.get_run(session, ctx, run_id)
     steps = await run_service.list_steps(session, ctx, run_id)
     return ok({"run": run_service.serialize_run(run), "steps": [run_service.serialize_step(s) for s in steps]})
 
 
 @router.get("/admin/metrics/overview")
-async def metrics_overview(session: DbSession, ctx: CurrentTenant) -> dict:
+async def metrics_overview(session: DbSession, ctx: AdminContext) -> dict:
     from app.domain.evaluation import metrics
 
     return ok(await metrics.overview(session, ctx))
@@ -37,7 +37,7 @@ class ConvertBadcaseRequest(BaseModel):
 
 
 @router.get("/admin/badcases")
-async def list_badcases(session: DbSession, ctx: CurrentTenant, status: str | None = None) -> dict:
+async def list_badcases(session: DbSession, ctx: AdminContext, status: str | None = None) -> dict:
     from app.domain.evaluation import badcase
 
     items = await badcase.list_badcases(session, ctx, status=status)
@@ -57,7 +57,7 @@ async def list_badcases(session: DbSession, ctx: CurrentTenant, status: str | No
 
 @router.post("/admin/badcases/{badcase_id}/convert")
 async def convert_badcase(
-    badcase_id: int, payload: ConvertBadcaseRequest, session: DbSession, ctx: CurrentTenant
+    badcase_id: int, payload: ConvertBadcaseRequest, session: DbSession, ctx: AdminContext
 ) -> dict:
     from app.domain.evaluation import audit, badcase
 
@@ -78,7 +78,7 @@ async def convert_badcase(
 @router.get("/admin/audit-logs")
 async def list_audit_logs(
     session: DbSession,
-    ctx: CurrentTenant,
+    ctx: AdminContext,
     action: str | None = None,
     resourceType: str | None = None,
     limit: int = 100,

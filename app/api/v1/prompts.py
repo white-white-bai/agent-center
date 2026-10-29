@@ -1,11 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentTenant, DbSession
 from app.core.responses import ok
+from app.core.tenant import require_admin
 from app.domain.prompt import repository
 
-router = APIRouter(prefix="/admin/prompts", tags=["prompts"])
+router = APIRouter(prefix="/admin/prompts", tags=["prompts"], dependencies=[Depends(require_admin)])
 
 
 class CreateTemplateRequest(BaseModel):

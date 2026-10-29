@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentTenant, DbSession
+from app.api.deps import AdminContext, CurrentTenant, DbSession
 from app.core.responses import ok
 from app.domain.knowledge import service
 
@@ -37,7 +37,7 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/admin/knowledge-spaces")
-async def create_space(payload: CreateSpaceRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+async def create_space(payload: CreateSpaceRequest, session: DbSession, ctx: AdminContext) -> dict:
     space = await service.create_space(
         session,
         ctx,
@@ -51,7 +51,7 @@ async def create_space(payload: CreateSpaceRequest, session: DbSession, ctx: Cur
 
 @router.post("/admin/knowledge-spaces/{space_id}/documents")
 async def create_document(
-    space_id: int, payload: CreateDocumentRequest, session: DbSession, ctx: CurrentTenant
+    space_id: int, payload: CreateDocumentRequest, session: DbSession, ctx: AdminContext
 ) -> dict:
     document = await service.ingest_document(
         session,
@@ -71,7 +71,7 @@ async def create_document(
 
 @router.post("/admin/knowledge-spaces/{space_id}/documents/{document_id}/publish")
 async def publish_document(
-    space_id: int, document_id: int, session: DbSession, ctx: CurrentTenant
+    space_id: int, document_id: int, session: DbSession, ctx: AdminContext
 ) -> dict:
     from app.domain.evaluation import audit
 

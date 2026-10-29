@@ -1,11 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentTenant, DbSession
 from app.core.responses import ok
+from app.core.tenant import require_admin
 from app.domain.knowledge import service, sync
 
-router = APIRouter(prefix="/admin/knowledge-sync-tasks", tags=["knowledge"])
+router = APIRouter(prefix="/admin/knowledge-sync-tasks", tags=["knowledge"], dependencies=[Depends(require_admin)])
 
 
 class CreateSyncTaskRequest(BaseModel):

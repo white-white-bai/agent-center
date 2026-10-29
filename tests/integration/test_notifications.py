@@ -32,7 +32,8 @@ async def test_dispatch_only_sends_due_notifications(async_client) -> None:
     )
 
     dispatched = await async_client.post(
-        "/api/v1/admin/notifications/dispatch-due", headers=HEADERS
+        "/api/v1/admin/notifications/dispatch-due",
+        headers={**HEADERS, "X-Roles": "admin"},
     )
 
     assert dispatched.json()["data"]["dispatched"] == 1
