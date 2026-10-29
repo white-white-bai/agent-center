@@ -242,6 +242,14 @@ async def stream_message(
     turn.ended_at = datetime.utcnow()
     await session.commit()
 
+    try:
+        from app.domain.session.summarizer import should_compress, summarize_conversation
+
+        if await should_compress(session, ctx.tenant_id, conversation.id):
+            await summarize_conversation(session, ctx, conversation)
+    except Exception:  # noqa: BLE001 - 摘要失败不得影响本轮对话
+        pass
+
 
 def _stream_answer(stream: _EventStream, answer: str) -> AsyncIterator[str]:
     for index in range(0, len(answer), ANSWER_CHUNK_SIZE):
