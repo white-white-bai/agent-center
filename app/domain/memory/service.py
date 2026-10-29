@@ -13,6 +13,7 @@ PHONE_PATTERN = re.compile(r"\b1\d{10}\b")
 SECRET_KEYWORDS = re.compile(r"密码|口令|password|验证码|银行卡|信用卡")
 
 MEMORY_TYPES = {"WORKING", "EPISODIC", "SEMANTIC", "PROCEDURAL"}
+DEFAULT_TTL_DAYS = {"SEMANTIC": 365, "EPISODIC": 180}
 
 
 def contains_sensitive(text: str) -> bool:
@@ -43,7 +44,8 @@ async def add_memory(
     if contains_sensitive(object_value) or contains_sensitive(subject):
         return None
 
-    expires_at = datetime.utcnow() + timedelta(days=ttl_days) if ttl_days else None
+    effective_ttl = ttl_days if ttl_days is not None else DEFAULT_TTL_DAYS.get(memory_type)
+    expires_at = datetime.utcnow() + timedelta(days=effective_ttl) if effective_ttl else None
     item = MemoryItem(
         tenant_id=ctx.tenant_id,
         user_id=ctx.user_id,

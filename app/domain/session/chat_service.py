@@ -385,7 +385,7 @@ async def _stream_message_locked(
         from app.domain.session.summarizer import should_compress, summarize_conversation
 
         if await should_compress(session, ctx.tenant_id, conversation.id):
-            await summarize_conversation(session, ctx, conversation)
+            await summarize_conversation(session, ctx, conversation, router=router)
     except Exception:  # noqa: BLE001 - 摘要失败不得影响本轮对话
         pass
 

@@ -38,8 +38,38 @@ async def should_compress(session: AsyncSession, tenant_id: str, conversation_id
     return (result.scalar_one() or 0) > SUMMARY_TRIGGER_MESSAGES
 
 
+SUMMARY_PROMPT = """请把下面的会话压缩为不超过 300 字的中文摘要，保留已确认事实、未完成任务与关键结论。
+会话内容：
+{content}
+只输出 JSON：{{"summary":"摘要内容"}}
+"""
+
+
+async def _model_summary(messages: list[Message], router, model: str, ctx, session) -> str | None:
+    import json
+
+    from app.integrations.llm.client import ChatMessage as LLMMessage
+    from app.integrations.llm.client import LLMRequest
+
+    content = "\n".join(f"{m.role}: {m.content}" for m in messages[-20:])
+    request = LLMRequest(
+        messages=[LLMMessage(role="user", content=SUMMARY_PROMPT.format(content=content))],
+        model=model,
+        response_format={"type": "json_object"},
+    )
+    response = await router.complete(session, ctx, request, primary_model=model, max_retries=0)
+    payload = json.loads(response.content)
+    summary = (payload.get("summary") or "").strip()
+    return summary[:SUMMARY_MAX_CHARS] or None
+
+
 async def summarize_conversation(
-    session: AsyncSession, ctx: TenantContext, conversation: Conversation
+    session: AsyncSession,
+    ctx: TenantContext,
+    conversation: Conversation,
+    *,
+    router=None,
+    model: str | None = None,
 ) -> str | None:
     result = await session.execute(
         select(Message)
@@ -50,7 +80,17 @@ async def summarize_conversation(
         .order_by(Message.id.asc())
     )
     messages = list(result.scalars().all())
-    summary = compress_messages(messages)
+
+    summary: str | None = None
+    if router is not None and messages:
+        from app.core.config import get_settings
+
+        try:
+            summary = await _model_summary(messages, router, model or get_settings().llm_model, ctx, session)
+        except Exception:  # noqa: BLE001 - 模型摘要失败回退规则摘要
+            summary = None
+    if summary is None:
+        summary = compress_messages(messages)
     if not summary:
         return None
     conversation.context_summary = summary

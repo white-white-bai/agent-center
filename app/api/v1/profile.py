@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentTenant, DbSession
+from app.api.deps import CurrentTenant, DbSession, ModelRouterDep
 from app.core.responses import ok
 from app.domain.profile import service
 
@@ -24,6 +24,13 @@ async def profile_summary(session: DbSession, ctx: CurrentTenant) -> dict:
     summary = await service.get_profile_summary(session, ctx)
     matters = await service.get_active_matters(session, ctx)
     return ok({"summary": summary, "activeMatters": matters})
+
+
+@router.get("/suggestions")
+async def suggestions(session: DbSession, ctx: CurrentTenant, model_router: ModelRouterDep) -> dict:
+    from app.domain.profile.proactive import generate_suggestions
+
+    return ok(await generate_suggestions(session, ctx, router=model_router))
 
 
 @router.get("/tags")
