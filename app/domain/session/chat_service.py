@@ -117,6 +117,20 @@ async def stream_message(
         yield stream.format("message.end", {"runId": None, "finishReason": "duplicate"})
         return
 
+    from app.domain.safety.service import REFUSAL_MESSAGE, get_safety_service
+
+    safety = get_safety_service()
+    input_check = await safety.check(text, "input")
+    if not input_check.allowed:
+        stream = _EventStream("blocked")
+        yield stream.format(
+            "error",
+            {"runId": None, "code": "AC.SAFETY.BLOCKED", "message": input_check.reason},
+        )
+        yield stream.format("message.delta", {"runId": None, "seq": 1, "content": REFUSAL_MESSAGE})
+        yield stream.format("message.end", {"runId": None, "finishReason": "safety_blocked"})
+        return
+
     turn_no = await _next_turn_no(session, ctx.tenant_id, conversation.id)
     turn = ConversationTurn(
         tenant_id=ctx.tenant_id,
@@ -218,6 +232,9 @@ async def stream_message(
         run_registry.finish(run_id)
 
     if result.status == "COMPLETED":
+        output_check = await safety.check(result.answer, "output")
+        if not output_check.allowed:
+            result.answer = REFUSAL_MESSAGE
         for chunk in _stream_answer(stream, result.answer):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
