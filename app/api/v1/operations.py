@@ -33,15 +33,16 @@ async def replay_run_events(
     limit: int = 500,
 ) -> dict:
     from app.domain.session import event_service
+    from app.infrastructure.redis.event_stream import read_events, serialize_stream_event
 
     await service.get_conversation(session, ctx, session_id)
     await run_service.get_run(session, ctx, run_id, conversation_id=session_id)
+    after_seq = event_service.parse_last_event_id(lastEventId)
+    stream_events = await read_events(ctx.tenant_id, run_id, after_seq=after_seq, limit=limit)
+    if stream_events:
+        return ok([serialize_stream_event(event) for event in stream_events])
     events = await event_service.list_events(
-        session,
-        ctx,
-        run_id,
-        after_seq=event_service.parse_last_event_id(lastEventId),
-        limit=limit,
+        session, ctx, run_id, after_seq=after_seq, limit=limit
     )
     return ok([event_service.serialize_event(event) for event in events])
 

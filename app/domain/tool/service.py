@@ -11,7 +11,7 @@ from app.domain.tool import idempotency
 from app.domain.tool.executor import ToolContext, ToolExecutor, ToolResult
 from app.domain.tool.idempotency import build_idempotency_key
 from app.domain.tool.models import ToolDefinition, ToolIdempotencyRecord, ToolInvokeLog
-from app.domain.tool.resilience import circuit_breaker, rate_limiter
+from app.runtime.resilience import get_resilience
 
 
 async def _load_idempotency_record(
@@ -130,12 +130,13 @@ async def invoke_tool(
     executor = _resolve_executor(tool, executor)
 
     limiter_key = f"{ctx.tenant_id}:{tool_code}"
-    rate_limiter.check(
+    resilience = get_resilience()
+    await resilience.check_rate(
         limiter_key,
         limit=int(tool.rate_limit_policy_json.get("limit", 0)),
         window_seconds=int(tool.rate_limit_policy_json.get("window_seconds", 60)),
     )
-    circuit_breaker.check(limiter_key)
+    await resilience.check_circuit(limiter_key)
 
     if tool.write_operation and tool.idempotent:
         key = tool_context.idempotency_key or build_idempotency_key(
@@ -149,7 +150,7 @@ async def invoke_tool(
         tool_context = replace(tool_context, idempotency_key=key)
 
     result = await executor.execute(tool_code=tool_code, arguments=arguments, context=tool_context)
-    circuit_breaker.record(limiter_key, success=result.ok)
+    await resilience.record(limiter_key, success=result.ok)
 
     if tool.write_operation and tool.idempotent:
         record = await _load_idempotency_record(session, ctx, tool_code, tool_context.idempotency_key or "")

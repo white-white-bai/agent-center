@@ -32,4 +32,4 @@ conversation_locks = KeyedLock()
 
 
 def conversation_lock_key(tenant_id: str, conversation_id: int) -> str:
-    return f"conversation:{tenant_id}:{conversation_id}"
+    return f"lock:conversation:{tenant_id}:{conversation_id}"

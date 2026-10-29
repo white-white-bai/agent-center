@@ -104,10 +104,11 @@ async def stream_message(
     **kwargs,
 ) -> AsyncIterator[str]:
     """同一会话串行处理，避免并发写会话状态与 Run。"""
-    from app.runtime.locks import conversation_lock_key, conversation_locks
+    from app.runtime.locks import conversation_lock_key
+    from app.runtime.resilience import distributed_lock
 
     conversation: Conversation = kwargs["conversation"]
-    async with conversation_locks.acquire(conversation_lock_key(ctx.tenant_id, conversation.id)):
+    async with distributed_lock(conversation_lock_key(ctx.tenant_id, conversation.id)):
         async for chunk in _stream_message_locked(session, ctx, **kwargs):
             yield chunk
 
@@ -193,8 +194,15 @@ async def _stream_message_locked(
     event_buffer: list[dict] = []
 
     async def emit(event: str, data: dict) -> str:
+        from app.infrastructure.redis.event_stream import publish_event
+
         text = stream.format(event, data)
         event_buffer.append({"seq": stream.seq, "event": event, "data": data})
+        if run_id not in {"duplicate", "blocked"}:
+            try:
+                await publish_event(ctx.tenant_id, run_id, stream.seq, event, data)
+            except Exception:  # noqa: BLE001 - 事件流不可用不影响对话
+                pass
         return text
 
     yield await emit("run.start", {"runId": run_id, "agentCode": agent.code, "traceId": trace_id})
