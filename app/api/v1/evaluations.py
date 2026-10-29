@@ -54,6 +54,31 @@ async def create_case(
     return ok({"id": case.id, "question": case.question})
 
 
+class ImportCasesRequest(BaseModel):
+    cases: list[CreateCaseRequest] = Field(min_length=1)
+
+
+@router.post("/eval-datasets/{dataset_id}/cases/import")
+async def import_cases(
+    dataset_id: int, payload: ImportCasesRequest, session: DbSession, ctx: CurrentTenant
+) -> dict:
+    from app.domain.evaluation import service as eval_service
+
+    created = []
+    for item in payload.cases:
+        case = await eval_service.add_case(
+            session,
+            ctx,
+            dataset_id,
+            question=item.question,
+            expected_answer=item.expectedAnswer,
+            expected_doc_ids=item.expectedDocIds,
+            tags=item.tags or ["baseline"],
+        )
+        created.append(case.id)
+    return ok({"imported": len(created), "caseIds": created})
+
+
 @router.post("/evaluations")
 async def run_evaluation(
     payload: RunEvaluationRequest, session: DbSession, ctx: CurrentTenant, model_router: ModelRouterDep
