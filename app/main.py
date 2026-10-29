@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.v1 import chat
+from app.api.v1 import chat, prompts
 from app.core.logging import configure_logging
 from app.core.middleware import install_exception_handlers, install_trace_middleware
 
@@ -11,6 +11,7 @@ install_trace_middleware(app)
 install_exception_handlers(app)
 
 app.include_router(chat.router, prefix="/api/v1")
+app.include_router(prompts.router, prefix="/api/v1")
 
 
 @app.get("/healthz")
