@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.exceptions import AppError
 from app.core.responses import fail
+from app.core.tenant import reset_current_tenant, set_current_tenant
 from app.core.tracing import ensure_trace_id, new_trace_id, set_trace_id
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,10 @@ def install_trace_middleware(app: FastAPI) -> None:
     async def trace_middleware(request: Request, call_next):
         incoming = request.headers.get("X-Trace-Id") or new_trace_id()
         set_trace_id(incoming)
-        response = await call_next(request)
+        tenant_token = set_current_tenant(request.headers.get("X-Tenant-Id"))
+        try:
+            response = await call_next(request)
+        finally:
+            reset_current_tenant(tenant_token)
         response.headers["X-Trace-Id"] = incoming
         return response

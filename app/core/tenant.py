@@ -1,8 +1,23 @@
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 
 from fastapi import Depends, Header
 
 from app.core.exceptions import AuthError, ForbiddenError
+
+_current_tenant: ContextVar[str | None] = ContextVar("current_tenant_id", default=None)
+
+
+def set_current_tenant(tenant_id: str | None) -> Token:
+    return _current_tenant.set(tenant_id)
+
+
+def reset_current_tenant(token: Token) -> None:
+    _current_tenant.reset(token)
+
+
+def get_current_tenant() -> str | None:
+    return _current_tenant.get()
 
 
 @dataclass(frozen=True)

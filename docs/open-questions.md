@@ -27,7 +27,7 @@
 | I02 | 会话级分布式锁 | 已实现进程内按键互斥锁，保证单实例内会话串行 | 多实例需 Redis 锁（租约 + fencing token） |
 | I03 | 数据库迁移方式 | 已确认由 DBA 维护 DDL；已导出 `docs/schema-mysql.sql`（41 表，含唯一约束） | 生产关闭 `AC_AUTO_CREATE_TABLES`，由 DBA 审核执行 DDL |
 | I04 | LangGraph 的使用范围 | 已按要求将 ReAct 执行器改为 LangGraph 状态图（decide ↔ act） | 保持版本升级与递归上限的关注 |
-| I05 | 多租户隔离的强制方式 | 待按确认结果收敛到仓储层统一封装 | 逐模块迁移并补测试 |
+| I05 | 多租户隔离的强制方式 | 已实现 ORM 级租户守卫：请求上下文带租户时，所有 ORM 查询自动追加 tenant_id 条件（可显式跳过） | 写操作仍由服务层校验；后续可迁移为仓储基类 |
 | I06 | 敏感数据存储 | 已实现凭证 AES-GCM 加密存储与日志递归脱敏；生产需配置 AC_CREDENTIAL_KEY 并接入密钥服务 | 确认密钥托管与轮换方案 |
 | I07 | 管理员鉴权 | 已实现 require_admin（admin 角色或 admin:write 权限），管理接口已接入 | 接入正式账号体系后细化角色与数据范围 |
 | I08 | SSE 事件序列与补发 | 已持久化到 `run_event` 并提供按 `lastEventId` 重放；事件在 Run 结束后批量写入 | 进程异常退出时事件可能缺失，正式环境建议 Redis Stream 或独立事件写入通道 |
