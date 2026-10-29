@@ -14,27 +14,45 @@ from app.domain.tool.executor import ToolExecutor
 from app.integrations.llm.client import ChatMessage, LLMRequest
 from app.integrations.llm.router import ModelRouter
 from app.runtime.context import RunContext, RuntimeResult
-from app.runtime.decisions import ClarifyDecision, FinalDecision, ToolCallDecision, parse_decision
+from app.domain.session.slots import SessionState, Slot, merge_slot, next_clarification
+from app.runtime.decisions import (
+    ClarifyDecision,
+    FinalDecision,
+    SlotsDecision,
+    ToolCallDecision,
+    parse_decision,
+)
 
 SYSTEM_TEMPLATE = """你是{role}。
 目标：{goal}
 约束：{constraints}
 
-你只能输出 JSON，格式三选一：
+你只能输出 JSON，格式四选一：
 1. 调用工具：{{"type":"tool_call","tool":"工具编码","arguments":{{...}}}}
 2. 最终回答：{{"type":"final","answer":"回答内容"}}
 3. 澄清追问：{{"type":"clarify","question":"追问内容"}}
+4. 记录槽位：{{"type":"slots","slots":{{"槽位名":"值"}}}}
 可用工具：{tools}
+必填槽位：{required_slots}
+当前会话状态：{session_state}
 """
 
 
-def build_system_prompt(config: dict, allowed_tools: list[str]) -> str:
+def build_system_prompt(
+    config: dict,
+    allowed_tools: list[str],
+    *,
+    required_slots: list[str] | None = None,
+    session_state: dict | None = None,
+) -> str:
     constraints = config.get("constraints") or []
     return SYSTEM_TEMPLATE.format(
         role=config.get("role") or "政务智能助手",
         goal=config.get("goal") or "准确回答用户问题",
         constraints="；".join(constraints) if constraints else "无",
         tools="、".join(allowed_tools) if allowed_tools else "无",
+        required_slots="、".join(required_slots) if required_slots else "无",
+        session_state=json.dumps(session_state or {}, ensure_ascii=False),
     )
 
 
@@ -125,6 +143,26 @@ class ReActExecutor:
                 result.status = "WAITING_USER"
                 result.question = decision.question
                 break
+            if isinstance(decision, SlotsDecision):
+                state = await self._load_state(run_ctx)
+                for name, value in decision.slots.items():
+                    merge_slot(state, name, value, source="model", confidence=0.8)
+                await self._save_state(run_ctx, state)
+                await self._record_step(
+                    ctx,
+                    run_ctx,
+                    step_no,
+                    "STATE_TRANSITION",
+                    json.dumps(decision.slots, ensure_ascii=False)[:2000],
+                )
+                question = next_clarification(state, run_ctx.agent_config.get("slot_questions") or {})
+                if question:
+                    await self._record_step(ctx, run_ctx, step_no, "CLARIFICATION", question[:2000])
+                    result.status = "WAITING_USER"
+                    result.question = question
+                    break
+                messages.append(ChatMessage(role="user", content="槽位已记录，请继续。"))
+                continue
             if isinstance(decision, ToolCallDecision):
                 if decision.tool not in run_ctx.allowed_tools:
                     await self._record_step(
@@ -196,6 +234,31 @@ class ReActExecutor:
         result.steps = step_no
         await self._finish(ctx, run_ctx, result)
         return result
+
+    async def _load_state(self, run_ctx: RunContext) -> SessionState:
+        from app.domain.session.models import Conversation
+
+        conversation = await self.session.get(Conversation, run_ctx.conversation_id)
+        raw = (conversation.session_state_json or {}) if conversation is not None else {}
+        state = SessionState.from_dict(raw)
+        for name in run_ctx.agent_config.get("required_slots") or []:
+            if name not in state.required_slots:
+                state.required_slots.append(name)
+            state.slots.setdefault(name, Slot())
+        return state
+
+    async def _save_state(self, run_ctx: RunContext, state: SessionState) -> None:
+        from app.domain.session.models import Conversation
+
+        conversation = await self.session.get(Conversation, run_ctx.conversation_id)
+        if conversation is None:
+            return
+        payload = state.to_dict()
+        metadata = (conversation.session_state_json or {}).get("metadata")
+        if metadata is not None:
+            payload["metadata"] = metadata
+        conversation.session_state_json = payload
+        await self.session.commit()
 
     async def _record_step(
         self,

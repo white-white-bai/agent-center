@@ -289,7 +289,12 @@ async def _build_system_prompt(
     from app.domain.prompt.models import PromptVersion
     from app.domain.prompt.service import render
 
-    agent_prompt = build_system_prompt(version.config_json, list(version.tool_bindings_json or []))
+    agent_prompt = build_system_prompt(
+        version.config_json,
+        list(version.tool_bindings_json or []),
+        required_slots=version.config_json.get("required_slots") or [],
+        session_state=conversation.session_state_json or {},
+    )
     if version.prompt_version_id:
         prompt_version = await session.get(PromptVersion, version.prompt_version_id)
         if (

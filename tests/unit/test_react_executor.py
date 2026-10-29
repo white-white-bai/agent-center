@@ -5,6 +5,7 @@ from app.core.tenant import TenantContext
 from app.runtime.decisions import (
     ClarifyDecision,
     FinalDecision,
+    SlotsDecision,
     ToolCallDecision,
     parse_decision,
 )
@@ -42,6 +43,18 @@ def test_parse_decision_from_code_fence() -> None:
 def test_parse_invalid_json_raises() -> None:
     with pytest.raises(ValidationError):
         parse_decision("not json")
+
+
+def test_parse_slots_decision() -> None:
+    decision = parse_decision('{"type":"slots","slots":{"matter_type":"营业执照"}}')
+
+    assert isinstance(decision, SlotsDecision)
+    assert decision.slots == {"matter_type": "营业执照"}
+
+
+def test_parse_slots_requires_object() -> None:
+    with pytest.raises(ValidationError):
+        parse_decision('{"type":"slots","slots":"bad"}')
 
 
 def test_parse_unknown_type_raises() -> None:
@@ -216,6 +229,62 @@ async def test_executor_stops_at_step_budget(db_session) -> None:
     assert result.status == "FAILED"
     assert result.error_code == "AC.RUN.STEP_BUDGET_EXCEEDED"
     assert result.steps == 3
+
+
+async def test_executor_records_slots_and_persists_state(db_session) -> None:
+    from app.domain.session.models import Conversation
+    from app.domain.tool.executor import FunctionToolExecutor
+    from app.integrations.llm.router import ModelRouter
+    from app.runtime.react_executor import ReActExecutor
+
+    await _create_run(db_session)
+    client = ScriptedLLMClient(
+        [
+            '{"type":"slots","slots":{"matter_type":"营业执照办理"}}',
+            '{"type":"final","answer":"已记录"}',
+        ]
+    )
+
+    result = await ReActExecutor(db_session, ModelRouter(client), FunctionToolExecutor()).run(
+        TenantContext(tenant_id="t1", user_id="u1"),
+        _run_ctx(
+            agent_config={
+                "role": "顾问",
+                "goal": "答疑",
+                "required_slots": ["matter_type"],
+                "slot_questions": {"matter_type": "请提供事项名称"},
+            }
+        ),
+    )
+
+    assert result.status == "COMPLETED"
+    conversation = await db_session.get(Conversation, 1)
+    assert conversation.session_state_json["slots"]["matter_type"]["value"] == "营业执照办理"
+    assert conversation.session_state_json["slots"]["matter_type"]["status"] == "filled"
+
+
+async def test_executor_asks_for_missing_slot(db_session) -> None:
+    from app.domain.tool.executor import FunctionToolExecutor
+    from app.integrations.llm.router import ModelRouter
+    from app.runtime.react_executor import ReActExecutor
+
+    await _create_run(db_session)
+    client = ScriptedLLMClient(['{"type":"slots","slots":{"matter_type":"营业执照"}}'])
+
+    result = await ReActExecutor(db_session, ModelRouter(client), FunctionToolExecutor()).run(
+        TenantContext(tenant_id="t1", user_id="u1"),
+        _run_ctx(
+            agent_config={
+                "role": "顾问",
+                "goal": "答疑",
+                "required_slots": ["matter_type", "application_number"],
+                "slot_questions": {"application_number": "请提供申请编号"},
+            }
+        ),
+    )
+
+    assert result.status == "WAITING_USER"
+    assert result.question == "请提供申请编号"
 
 
 async def test_executor_returns_clarification(db_session) -> None:

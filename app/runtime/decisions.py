@@ -24,7 +24,12 @@ class ClarifyDecision:
     question: str
 
 
-Decision = ToolCallDecision | FinalDecision | ClarifyDecision
+@dataclass
+class SlotsDecision:
+    slots: dict[str, Any] = field(default_factory=dict)
+
+
+Decision = ToolCallDecision | FinalDecision | ClarifyDecision | SlotsDecision
 
 
 def parse_decision(content: str) -> Decision:
@@ -47,4 +52,9 @@ def parse_decision(content: str) -> Decision:
         return FinalDecision(answer=payload.get("answer") or "")
     if decision_type == "clarify":
         return ClarifyDecision(question=payload.get("question") or "")
+    if decision_type == "slots":
+        slots = payload.get("slots")
+        if not isinstance(slots, dict):
+            raise ValidationError("槽位决策缺少 slots 对象")
+        return SlotsDecision(slots=slots)
     raise ValidationError(f"未知的决策类型: {decision_type}")
