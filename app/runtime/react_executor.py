@@ -9,7 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.core.tenant import TenantContext
-from app.domain.session.slots import SessionState, Slot, merge_slot, next_clarification
+from app.domain.session.slots import (
+    SessionState,
+    Slot,
+    merge_slot,
+    next_clarification,
+    resume_previous_topic,
+    suspend_and_switch,
+)
 from app.domain.tool.executor import ToolContext, ToolExecutor
 from app.domain.tool.service import invoke_tool
 from app.integrations.llm.client import ChatMessage, LLMRequest
@@ -21,6 +28,7 @@ from app.runtime.decisions import (
     HandoffDecision,
     SlotsDecision,
     ToolCallDecision,
+    TopicDecision,
     parse_decision,
 )
 
@@ -34,6 +42,7 @@ SYSTEM_TEMPLATE = """你是{role}。
 3. 澄清追问：{{"type":"clarify","question":"追问内容"}}
 4. 记录槽位：{{"type":"slots","slots":{{"槽位名":"值"}}}}
 5. 交接其他 Agent：{{"type":"handoff","to":"目标 Agent 编码","reason":"原因"}}
+6. 话题切换/恢复：{{"type":"topic","action":"switch","topic":"新话题"}} 或 {{"type":"topic","action":"resume"}}
 可用工具：{tools}
 必填槽位：{required_slots}
 当前会话状态：{session_state}
@@ -249,6 +258,9 @@ class ReActExecutor:
         if kind == "slots":
             return await self._act_slots(ctx, run_ctx, state, decision.get("slots") or {}, step_no)
 
+        if kind == "topic":
+            return await self._act_topic(ctx, run_ctx, state, decision, step_no)
+
         if kind == "handoff":
             return await self._act_handoff(ctx, run_ctx, state, decision, step_no)
 
@@ -274,6 +286,26 @@ class ReActExecutor:
             await self._record_step(ctx, run_ctx, step_no, "CLARIFICATION", question[:2000])
             return {**state, "status": "WAITING_USER", "question": question}
         messages = state["messages"] + [{"role": "user", "content": "槽位已记录，请继续。"}]
+        return {**state, "messages": messages}
+
+    async def _act_topic(
+        self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
+    ) -> GraphState:
+        session_state = await self._load_state(run_ctx)
+        action = decision.get("action")
+        if action == "switch":
+            suspend_and_switch(session_state, decision.get("topic") or "")
+            note = f"已切换到话题：{session_state.active_topic}"
+        else:
+            resumed = resume_previous_topic(session_state)
+            if resumed is None:
+                await self._record_step(ctx, run_ctx, step_no, "STATE_TRANSITION", "无挂起话题可恢复", status="FAILED")
+                return {**state, "messages": state["messages"] + [{"role": "user", "content": "没有可恢复的原话题。"}]}
+            note = f"已回到原话题：{resumed}"
+
+        await self._save_state(run_ctx, session_state)
+        await self._record_step(ctx, run_ctx, step_no, "STATE_TRANSITION", note)
+        messages = state["messages"] + [{"role": "user", "content": f"{note}，请继续。"}]
         return {**state, "messages": messages}
 
     async def _act_tool(
@@ -444,6 +476,8 @@ class ReActExecutor:
             return {"type": "clarify", "question": decision.question}
         if isinstance(decision, SlotsDecision):
             return {"type": "slots", "slots": decision.slots}
+        if isinstance(decision, TopicDecision):
+            return {"type": "topic", "action": decision.action, "topic": decision.topic}
         if isinstance(decision, HandoffDecision):
             return {
                 "type": "handoff",

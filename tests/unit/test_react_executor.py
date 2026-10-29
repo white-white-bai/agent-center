@@ -7,6 +7,7 @@ from app.runtime.decisions import (
     FinalDecision,
     SlotsDecision,
     ToolCallDecision,
+    TopicDecision,
     parse_decision,
 )
 from app.integrations.llm.client import LLMResponse
@@ -55,6 +56,23 @@ def test_parse_slots_decision() -> None:
 def test_parse_slots_requires_object() -> None:
     with pytest.raises(ValidationError):
         parse_decision('{"type":"slots","slots":"bad"}')
+
+
+def test_parse_topic_decisions() -> None:
+    switch = parse_decision('{"type":"topic","action":"switch","topic":"社保查询"}')
+    resume = parse_decision('{"type":"topic","action":"resume"}')
+
+    assert isinstance(switch, TopicDecision)
+    assert switch.action == "switch"
+    assert switch.topic == "社保查询"
+    assert resume.action == "resume"
+
+
+def test_parse_topic_requires_valid_action() -> None:
+    with pytest.raises(ValidationError):
+        parse_decision('{"type":"topic","action":"unknown"}')
+    with pytest.raises(ValidationError):
+        parse_decision('{"type":"topic","action":"switch"}')
 
 
 def test_parse_unknown_type_raises() -> None:
@@ -285,6 +303,60 @@ async def test_executor_asks_for_missing_slot(db_session) -> None:
 
     assert result.status == "WAITING_USER"
     assert result.question == "请提供申请编号"
+
+
+async def test_executor_switches_and_resumes_topic(db_session) -> None:
+    from app.domain.session.models import Conversation
+    from app.domain.tool.executor import FunctionToolExecutor
+    from app.integrations.llm.router import ModelRouter
+    from app.runtime.react_executor import ReActExecutor
+
+    await _create_run(db_session)
+    conversation = await db_session.get(Conversation, 1)
+    conversation.session_state_json = {
+        "active_topic": "营业执照办理",
+        "topic_stack": [],
+    }
+    await db_session.commit()
+
+    switch_client = ScriptedLLMClient(
+        [
+            '{"type":"topic","action":"switch","topic":"社保查询"}',
+            '{"type":"final","answer":"已切换"}',
+        ]
+    )
+    result = await ReActExecutor(
+        db_session, ModelRouter(switch_client), FunctionToolExecutor()
+    ).run(TenantContext(tenant_id="t1", user_id="u1"), _run_ctx())
+
+    assert result.status == "COMPLETED"
+    await db_session.refresh(conversation)
+    assert conversation.session_state_json["active_topic"] == "社保查询"
+    assert conversation.session_state_json["topic_stack"][-1]["topic"] == "营业执照办理"
+
+    from app.domain.session.models import Run
+
+    db_session.add(
+        Run(
+            id="run_resume",
+            tenant_id="t1",
+            conversation_id=1,
+            trace_id="trace_2",
+            status="QUEUED",
+        )
+    )
+    await db_session.commit()
+
+    resume_client = ScriptedLLMClient(
+        ['{"type":"topic","action":"resume"}', '{"type":"final","answer":"已恢复"}']
+    )
+    await ReActExecutor(db_session, ModelRouter(resume_client), FunctionToolExecutor()).run(
+        TenantContext(tenant_id="t1", user_id="u1"), _run_ctx(run_id="run_resume")
+    )
+
+    await db_session.refresh(conversation)
+    assert conversation.session_state_json["active_topic"] == "营业执照办理"
+    assert conversation.session_state_json["topic_stack"] == []
 
 
 async def test_executor_returns_clarification(db_session) -> None:

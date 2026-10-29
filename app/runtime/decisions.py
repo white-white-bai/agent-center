@@ -36,7 +36,15 @@ class HandoffDecision:
     pending_slots: list[str] = field(default_factory=list)
 
 
-Decision = ToolCallDecision | FinalDecision | ClarifyDecision | SlotsDecision | HandoffDecision
+@dataclass
+class TopicDecision:
+    action: str
+    topic: str = ""
+
+
+Decision = (
+    ToolCallDecision | FinalDecision | ClarifyDecision | SlotsDecision | HandoffDecision | TopicDecision
+)
 
 
 def parse_decision(content: str) -> Decision:
@@ -64,6 +72,13 @@ def parse_decision(content: str) -> Decision:
         if not isinstance(slots, dict):
             raise ValidationError("槽位决策缺少 slots 对象")
         return SlotsDecision(slots=slots)
+    if decision_type == "topic":
+        action = payload.get("action")
+        if action not in {"switch", "resume"}:
+            raise ValidationError("话题决策 action 仅支持 switch 或 resume")
+        if action == "switch" and not payload.get("topic"):
+            raise ValidationError("切换话题缺少 topic 字段")
+        return TopicDecision(action=action, topic=payload.get("topic") or "")
     if decision_type == "handoff":
         target = payload.get("to")
         if not target:
