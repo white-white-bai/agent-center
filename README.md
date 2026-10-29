@@ -83,6 +83,8 @@ docker compose up -d --build
 | `AC_CREDENTIAL_KEY` | 空 | 工具凭证加密密钥；生产必须配置 |
 | `AC_SSE_HEARTBEAT_SECONDS` | `15` | SSE 心跳间隔 |
 | `AC_TRACE_RETENTION_DAYS` | `90` | 轨迹保留天数 |
+| `AC_ALERT_WEBHOOK_URL` | 空 | 告警回调地址；为空时只返回告警不推送 |
+| `AC_PUBLISH_REQUIRE_EVAL` | `false` | 开启后提示词发布必须有达标评测 |
 | `AC_STUB_REPLY` | 桩回复 JSON | 桩模型返回的决策 JSON |
 | `AC_SENSITIVE_WORDS` | 空 | 敏感词表，逗号分隔 |
 | `AC_MODERATION_URL` | 空 | 外部审核服务地址，不可用时拒绝放行 |
@@ -113,14 +115,15 @@ X-Trace-Id: trace_xxx
 | 会话管理 | `GET /api/v1/admin/sessions`（用户/状态/时间/分页） |
 | 恢复 | `POST /api/v1/chat/sessions/{id}/runs/{runId}/resume` |
 | 反馈 | `POST /api/v1/feedback` |
-| Agent | `GET/POST /api/v1/admin/agents`、`.../{id}/versions`、`.../{id}/publish` |
+| Agent | `GET/POST /api/v1/admin/agents`、`.../{id}/versions`、`.../{id}/publish`、`.../{id}/bindings` |
 | 提示词 | `POST /api/v1/admin/prompts`、`.../{id}/versions`、`.../transition` |
 | 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、凭证管理 |
 | 知识 | `POST /api/v1/admin/knowledge-spaces`、`.../documents`、`.../publish`、`POST /api/v1/knowledge/search` |
 | 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks` |
+| 知识版本 | `POST /api/v1/admin/knowledge-documents/{id}/versions`、`.../unpublish` |
 | 记忆/画像 | `GET /api/v1/memory`、`GET /api/v1/profile/summary`、`GET /api/v1/profile/suggestions` |
 | 评测 | `POST /api/v1/admin/eval-datasets`、`.../cases/import`（批量基线导入）、`POST /api/v1/admin/evaluations` |
-| 运营 | `GET /api/v1/admin/badcases`、`GET /api/v1/admin/audit-logs`、`GET /api/v1/admin/metrics/overview` |
+| 运营 | `GET /api/v1/admin/badcases`、`GET /api/v1/admin/audit-logs`、`GET /api/v1/admin/metrics/overview`、`GET .../metrics/prometheus`、`POST .../alerts/check` |
 | 提醒 | `POST /api/v1/notifications`、`POST /api/v1/admin/notifications/dispatch-due` |
 | 运维 | `POST /api/v1/admin/maintenance/purge-trace`（默认清理 90 天前轨迹） |
 
