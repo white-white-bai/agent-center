@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.v1 import (
@@ -14,12 +16,24 @@ from app.api.v1 import (
     routing,
     tools,
 )
+from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import install_exception_handlers, install_trace_middleware
 
 configure_logging()
 
-app = FastAPI(title="Agent Center", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if get_settings().auto_create_tables:
+        from app.infrastructure.database.registry import create_all
+        from app.infrastructure.database.session import engine
+
+        await create_all(engine)
+    yield
+
+
+app = FastAPI(title="Agent Center", version="0.1.0", lifespan=lifespan)
 install_trace_middleware(app)
 install_exception_handlers(app)
 
