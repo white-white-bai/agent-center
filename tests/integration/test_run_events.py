@@ -97,6 +97,44 @@ async def test_replay_can_resume_from_last_event_id(async_client) -> None:
     assert resumed[-1]["event"] == "message.end"
 
 
+async def test_stream_endpoint_resumes_from_last_event_id(async_client) -> None:
+    session_id, run_id = await _send(async_client)
+    all_events = (
+        await async_client.get(
+            f"/api/v1/chat/sessions/{session_id}/runs/{run_id}/events", headers=HEADERS
+        )
+    ).json()["data"]
+    cut = all_events[0]
+
+    response = await async_client.get(
+        f"/api/v1/chat/sessions/{session_id}/runs/{run_id}/stream",
+        params={"lastEventId": cut["id"]},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "stream.end" in response.text
+    ids = [
+        line[len("id: ") :]
+        for line in response.text.splitlines()
+        if line.startswith("id: ") and not line.endswith(":end")
+    ]
+    assert f"{run_id}:{cut['seq']}" not in ids
+    assert all(int(item.split(":")[1]) > cut["seq"] for item in ids if item.split(":")[0] == run_id)
+
+
+async def test_stream_endpoint_is_tenant_isolated(async_client) -> None:
+    session_id, run_id = await _send(async_client)
+
+    response = await async_client.get(
+        f"/api/v1/chat/sessions/{session_id}/runs/{run_id}/stream",
+        headers={"X-Tenant-Id": "t2", "X-User-Id": "u2"},
+    )
+
+    assert response.status_code == 404
+
+
 async def test_replay_is_tenant_isolated(async_client) -> None:
     session_id, run_id = await _send(async_client)
 

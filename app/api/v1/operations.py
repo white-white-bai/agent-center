@@ -35,18 +35,55 @@ async def replay_run_events(
     limit: int = 500,
 ) -> dict:
     from app.domain.session import event_service
-    from app.infrastructure.redis.event_stream import read_events, serialize_stream_event
 
     await service.get_conversation(session, ctx, session_id)
     await run_service.get_run(session, ctx, run_id, conversation_id=session_id)
-    after_seq = event_service.parse_last_event_id(lastEventId)
-    stream_events = await read_events(ctx.tenant_id, run_id, after_seq=after_seq, limit=limit)
-    if stream_events:
-        return ok([serialize_stream_event(event) for event in stream_events])
-    events = await event_service.list_events(
-        session, ctx, run_id, after_seq=after_seq, limit=limit
+    events = await event_service.load_events(
+        session,
+        ctx,
+        run_id,
+        after_seq=event_service.parse_last_event_id(lastEventId),
+        limit=limit,
     )
-    return ok([event_service.serialize_event(event) for event in events])
+    return ok(events)
+
+
+@router.get("/chat/sessions/{session_id}/runs/{run_id}/stream")
+async def stream_run_events(
+    session_id: int,
+    run_id: str,
+    session: DbSession,
+    ctx: CurrentTenant,
+    lastEventId: str | None = None,
+    limit: int = 500,
+):
+    """按 Last-Event-ID 直接续流，客户端无需轮询重放接口。"""
+    from fastapi.responses import StreamingResponse
+
+    from app.domain.session import event_service
+
+    await service.get_conversation(session, ctx, session_id)
+    await run_service.get_run(session, ctx, run_id, conversation_id=session_id)
+    events = await event_service.load_events(
+        session,
+        ctx,
+        run_id,
+        after_seq=event_service.parse_last_event_id(lastEventId),
+        limit=limit,
+    )
+
+    async def _generate():
+        for event in events:
+            yield event_service.format_sse(event)
+        yield event_service.format_sse(
+            {"id": f"{run_id}:end", "event": "stream.end", "data": {"runId": run_id}}
+        )
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 class PurgeTraceRequest(BaseModel):
