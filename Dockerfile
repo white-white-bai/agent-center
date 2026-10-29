@@ -2,14 +2,18 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10
 
 WORKDIR /app
 
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY pyproject.toml ./
 COPY app ./app
-
-RUN pip install --no-cache-dir ".[mysql,redis,vector]"
+RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8000
 
