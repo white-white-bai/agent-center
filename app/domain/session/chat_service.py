@@ -222,8 +222,17 @@ async def _stream_message_locked(
     model_policy.setdefault("primary", settings.llm_model)
     model_policy.setdefault("fallback", settings.llm_fallback_model)
     token_budget = int(model_policy.get("token_budget", 32000))
+    allowed_tools = await _resolve_allowed_tools(session, ctx, agent, version)
     system_prompt, knowledge_results = await _build_system_prompt(
-        session, ctx, conversation, version, user_message.id, text, token_budget, agent
+        session,
+        ctx,
+        conversation,
+        version,
+        user_message.id,
+        text,
+        token_budget,
+        agent,
+        allowed_tools=allowed_tools,
     )
 
     run_ctx = RunContext(
@@ -237,7 +246,7 @@ async def _stream_message_locked(
         user_message=text,
         agent_config=version.config_json,
         model_policy=model_policy,
-        allowed_tools=list(version.tool_bindings_json or []),
+        allowed_tools=allowed_tools,
         max_steps=int(model_policy.get("max_steps", 8)),
         token_budget=token_budget,
         timeout_ms=int(model_policy.get("timeout_ms", settings.llm_timeout_ms)),
@@ -456,6 +465,26 @@ async def _save_assistant(
     return message
 
 
+async def _resolve_allowed_tools(
+    session: AsyncSession, ctx: TenantContext, agent, version
+) -> list[str]:
+    from sqlalchemy import select
+
+    from app.domain.tool.models import ToolBinding
+
+    if agent is not None:
+        rows = await session.execute(
+            select(ToolBinding).where(
+                ToolBinding.tenant_id == ctx.tenant_id,
+                ToolBinding.agent_id == agent.id,
+            )
+        )
+        bindings = [row.tool_code for row in rows.scalars().all() if row.enabled]
+        if bindings:
+            return bindings
+    return list(version.tool_bindings_json or [])
+
+
 async def _build_system_prompt(
     session: AsyncSession,
     ctx: TenantContext,
@@ -465,6 +494,7 @@ async def _build_system_prompt(
     text: str,
     token_budget: int,
     agent=None,
+    allowed_tools: list[str] | None = None,
 ) -> tuple[str, list[dict]]:
     from app.core.exceptions import ValidationError
     from app.domain.memory.service import search_memories
@@ -472,9 +502,10 @@ async def _build_system_prompt(
     from app.domain.prompt.models import PromptVersion
     from app.domain.prompt.service import render
 
+    tools = allowed_tools if allowed_tools is not None else list(version.tool_bindings_json or [])
     agent_prompt = build_system_prompt(
         version.config_json,
-        list(version.tool_bindings_json or []),
+        tools,
         required_slots=version.config_json.get("required_slots") or [],
         session_state=conversation.session_state_json or {},
     )

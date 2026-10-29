@@ -129,6 +129,41 @@ async def create_version(
     return ok(_serialize_version(version))
 
 
+class BindingsRequest(BaseModel):
+    tools: list[str] = Field(default_factory=list)
+    promptVersionId: int | None = None
+
+
+@router.get("/{agent_id}/bindings")
+async def get_bindings(agent_id: int, session: DbSession, ctx: CurrentTenant) -> dict:
+    tools, prompt_version_id = await service.get_bindings(session, ctx, agent_id)
+    return ok({"tools": tools, "promptVersionId": prompt_version_id})
+
+
+@router.put("/{agent_id}/bindings")
+async def update_bindings(
+    agent_id: int, payload: BindingsRequest, session: DbSession, ctx: CurrentTenant
+) -> dict:
+    from app.domain.evaluation import audit
+
+    await service.sync_bindings(
+        session,
+        ctx,
+        agent_id,
+        tools=payload.tools,
+        prompt_version_id=payload.promptVersionId,
+    )
+    await audit.record_audit(
+        session,
+        ctx,
+        action="agent.bindings.update",
+        resource_type="agent",
+        resource_id=agent_id,
+        detail={"tools": payload.tools, "promptVersionId": payload.promptVersionId},
+    )
+    return ok({"tools": payload.tools, "promptVersionId": payload.promptVersionId})
+
+
 @router.post("/{agent_id}/publish")
 async def publish_agent(agent_id: int, payload: PublishRequest, session: DbSession, ctx: CurrentTenant) -> dict:
     from app.domain.evaluation import audit

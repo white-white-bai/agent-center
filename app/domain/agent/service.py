@@ -59,6 +59,72 @@ async def list_agents(session: AsyncSession, ctx: TenantContext) -> list[AgentDe
     return list(result.scalars().all())
 
 
+async def sync_bindings(
+    session: AsyncSession,
+    ctx: TenantContext,
+    agent_id: int,
+    *,
+    tools: list[str],
+    prompt_version_id: int | None,
+) -> None:
+    from sqlalchemy import delete
+
+    from app.domain.prompt.models import PromptBinding, PromptVersion
+    from app.domain.tool.models import ToolBinding
+
+    await get_agent(session, ctx, agent_id)
+
+    await session.execute(
+        delete(ToolBinding).where(
+            ToolBinding.tenant_id == ctx.tenant_id, ToolBinding.agent_id == agent_id
+        )
+    )
+    for code in tools:
+        session.add(ToolBinding(tenant_id=ctx.tenant_id, agent_id=agent_id, tool_code=code))
+
+    if prompt_version_id is not None:
+        prompt_version = await session.get(PromptVersion, prompt_version_id)
+        if prompt_version is not None and prompt_version.tenant_id == ctx.tenant_id:
+            await session.execute(
+                delete(PromptBinding).where(
+                    PromptBinding.tenant_id == ctx.tenant_id,
+                    PromptBinding.agent_id == agent_id,
+                )
+            )
+            session.add(
+                PromptBinding(
+                    tenant_id=ctx.tenant_id,
+                    agent_id=agent_id,
+                    prompt_template_id=prompt_version.template_id,
+                    prompt_version_id=prompt_version.id,
+                )
+            )
+    await session.commit()
+
+
+async def get_bindings(
+    session: AsyncSession, ctx: TenantContext, agent_id: int
+) -> tuple[list[str], int | None]:
+    from app.domain.prompt.models import PromptBinding
+    from app.domain.tool.models import ToolBinding
+
+    await get_agent(session, ctx, agent_id)
+    tool_rows = await session.execute(
+        select(ToolBinding).where(
+            ToolBinding.tenant_id == ctx.tenant_id, ToolBinding.agent_id == agent_id
+        )
+    )
+    tools = [row.tool_code for row in tool_rows.scalars().all() if row.enabled]
+
+    binding_rows = await session.execute(
+        select(PromptBinding).where(
+            PromptBinding.tenant_id == ctx.tenant_id, PromptBinding.agent_id == agent_id
+        )
+    )
+    binding = binding_rows.scalars().first()
+    return tools, binding.prompt_version_id if binding else None
+
+
 async def create_version(
     session: AsyncSession,
     ctx: TenantContext,
@@ -92,6 +158,13 @@ async def create_version(
     session.add(version)
     await session.commit()
     await session.refresh(version)
+    await sync_bindings(
+        session,
+        ctx,
+        agent_id,
+        tools=list(tool_bindings or []),
+        prompt_version_id=prompt_version_id,
+    )
     return version
 
 
