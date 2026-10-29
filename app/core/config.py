@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     embedding_dim: int = 1024
     redis_url: str = ""
+    milvus_uri: str = ""
+    milvus_collection: str = "agent_center_knowledge"
+    vector_top_k: int = 20
     memory_extraction_enabled: bool = False
     sensitive_words: str = ""
     moderation_url: str | None = None

@@ -122,7 +122,8 @@ async def ingest_document(
     await session.commit()
     await session.refresh(document)
 
-    for index, chunk in enumerate(split_text(content)):
+    chunks = split_text(content)
+    for index, chunk in enumerate(chunks):
         session.add(
             KnowledgeChunk(
                 tenant_id=ctx.tenant_id,
@@ -143,7 +144,42 @@ async def ingest_document(
             )
         )
     await session.commit()
+    await _index_chunks(session, ctx, document.id, chunks)
     return document
+
+
+async def _index_chunks(session: AsyncSession, ctx: TenantContext, document_id: int, chunks: list[dict]) -> None:
+    try:
+        from app.integrations.llm.openai_client import build_embedding_client
+        from app.infrastructure.vector.store import get_vector_store
+
+        result = await session.execute(
+            select(KnowledgeChunk).where(
+                KnowledgeChunk.document_id == document_id,
+                KnowledgeChunk.tenant_id == ctx.tenant_id,
+            )
+        )
+        rows = list(result.scalars().all())
+        if not rows:
+            return
+        vectors = await build_embedding_client().embed([row.content for row in rows])
+        get_vector_store().upsert(
+            ctx.tenant_id,
+            [
+                (
+                    row.chunk_id,
+                    vector,
+                    {
+                        "status": "DRAFT",
+                        "domain_code": row.domain_code,
+                        "region_code": row.region_code,
+                    },
+                )
+                for row, vector in zip(rows, vectors)
+            ],
+        )
+    except Exception:  # noqa: BLE001 - 向量化失败不阻塞入库，检索降级为关键词
+        pass
 
 
 async def publish_document(session: AsyncSession, ctx: TenantContext, document_id: int) -> KnowledgeDocument:
@@ -171,6 +207,22 @@ async def publish_document(session: AsyncSession, ctx: TenantContext, document_i
         chunk.status = "ACTIVE"
     document.status = "PUBLISHED"
     await session.commit()
+
+    try:
+        from app.infrastructure.vector.store import get_vector_store
+        from app.integrations.llm.openai_client import build_embedding_client
+
+        vectors = await build_embedding_client().embed([chunk.content for chunk in chunk_list])
+        get_vector_store().upsert(
+            ctx.tenant_id,
+            [
+                (chunk.chunk_id, vector, {"status": "ACTIVE"})
+                for chunk, vector in zip(chunk_list, vectors)
+            ],
+        )
+    except Exception:  # noqa: BLE001 - 向量化失败时检索降级为关键词
+        pass
+
     await session.refresh(document)
     return document
 
@@ -248,6 +300,22 @@ async def search(
 
     rows = (await session.execute(query_stmt)).all()
     tokens = _ngrams(query)
+
+    vector_hits: dict[str, float] = {}
+    try:
+        from app.core.config import get_settings
+        from app.infrastructure.vector.store import get_vector_store
+        from app.integrations.llm.openai_client import build_embedding_client
+
+        query_vector = (await build_embedding_client().embed([query]))[0]
+        vector_hits = dict(
+            get_vector_store().search(
+                ctx.tenant_id, query_vector, top_k=get_settings().vector_top_k
+            )
+        )
+    except Exception:  # noqa: BLE001 - 向量检索不可用时退化为关键词
+        vector_hits = {}
+
     scored: list[tuple[float, KnowledgeChunk, KnowledgeDocument]] = []
     for chunk, document in rows:
         if chunk.effective_from and chunk.effective_from > now:
@@ -256,9 +324,11 @@ async def search(
             continue
         content_tokens = _ngrams(chunk.content)
         matched = len(tokens & content_tokens)
-        if tokens and matched == 0:
+        keyword_score = matched / max(len(tokens), 1)
+        vector_score = max(0.0, vector_hits.get(chunk.chunk_id, 0.0))
+        if keyword_score == 0 and vector_score < 0.3:
             continue
-        score = (matched / max(len(tokens), 1)) + document.authority_level / 100
+        score = 0.4 * keyword_score + 0.6 * vector_score + document.authority_level / 100
         scored.append((score, chunk, document))
 
     scored.sort(key=lambda item: (item[0], item[2].authority_level), reverse=True)
