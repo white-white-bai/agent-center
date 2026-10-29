@@ -2,19 +2,19 @@ import json
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict
 
+from langgraph.graph import END, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.core.tenant import TenantContext
-from app.domain.tool.executor import ToolContext
+from app.domain.session.slots import SessionState, Slot, merge_slot, next_clarification
+from app.domain.tool.executor import ToolContext, ToolExecutor
 from app.domain.tool.service import invoke_tool
-from app.domain.tool.executor import ToolExecutor
 from app.integrations.llm.client import ChatMessage, LLMRequest
 from app.integrations.llm.router import ModelRouter
 from app.runtime.context import RunContext, RuntimeResult
-from app.domain.session.slots import SessionState, Slot, merge_slot, next_clarification
 from app.runtime.decisions import (
     ClarifyDecision,
     FinalDecision,
@@ -28,7 +28,7 @@ SYSTEM_TEMPLATE = """你是{role}。
 目标：{goal}
 约束：{constraints}
 
-你只能输出 JSON，格式四选一：
+你只能输出 JSON，格式五选一：
 1. 调用工具：{{"type":"tool_call","tool":"工具编码","arguments":{{...}}}}
 2. 最终回答：{{"type":"final","answer":"回答内容"}}
 3. 澄清追问：{{"type":"clarify","question":"追问内容"}}
@@ -38,6 +38,8 @@ SYSTEM_TEMPLATE = """你是{role}。
 必填槽位：{required_slots}
 当前会话状态：{session_state}
 """
+
+TERMINAL_STATUSES = {"COMPLETED", "WAITING_USER", "WAITING_CONFIRM", "HANDOFF", "INTERRUPTED", "FAILED"}
 
 
 def build_system_prompt(
@@ -58,10 +60,31 @@ def build_system_prompt(
     )
 
 
+class GraphState(TypedDict, total=False):
+    messages: list[dict[str, str]]
+    step: int
+    decision: dict[str, Any]
+    status: str
+    answer: str
+    question: str
+    tool_calls: int
+    token_input: int
+    token_output: int
+    error_code: str | None
+    confirmation_id: str | None
+    confirmation_summary: str
+
+
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 class ReActExecutor:
+    """基于 LangGraph 的 ReAct 执行器。
+
+    图结构：decide → (act → decide)* → END
+    decide 负责模型调用与终止判定，act 负责工具、槽位、交接与最终状态。
+    """
+
     def __init__(
         self,
         session: AsyncSession,
@@ -76,26 +99,37 @@ class ReActExecutor:
         self.tool_executor = tool_executor
         self.on_event = on_event
         self.registry = registry
+        self._started = 0.0
+        self._ctx: TenantContext | None = None
+        self._run_ctx: RunContext | None = None
 
     async def _emit(self, event: dict[str, Any]) -> None:
         if self.on_event is not None:
             await self.on_event(event)
 
     async def run(self, ctx: TenantContext, run_ctx: RunContext) -> RuntimeResult:
-        from app.domain.session.models import Run, RunStep
+        from app.domain.session.models import Run
 
-        result = RuntimeResult(run_id=run_ctx.run_id, status="RUNNING")
-        started = time.monotonic()
+        self._started = time.monotonic()
+        self._ctx = ctx
+        self._run_ctx = run_ctx
+
         system_prompt = run_ctx.system_prompt or build_system_prompt(
             run_ctx.agent_config, run_ctx.allowed_tools
         )
-        messages = [
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=run_ctx.user_message),
-        ]
-        model_policy = run_ctx.model_policy or {}
-        primary = model_policy.get("primary", "stub-primary")
-        fallback = model_policy.get("fallback")
+        initial: GraphState = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": run_ctx.user_message},
+            ],
+            "step": 0,
+            "tool_calls": 0,
+            "token_input": 0,
+            "token_output": 0,
+            "status": "RUNNING",
+            "answer": "",
+            "question": "",
+        }
 
         run = await self.session.get(Run, run_ctx.run_id)
         if run is not None:
@@ -103,218 +137,333 @@ class ReActExecutor:
             run.started_at = datetime.utcnow()
             await self.session.commit()
 
-        step_no = 0
-        while step_no < run_ctx.max_steps:
-            if self.registry is not None and self.registry.is_interrupted(run_ctx.run_id):
-                result.status = "INTERRUPTED"
-                result.error_code = None
-                break
-            if (time.monotonic() - started) * 1000 > run_ctx.timeout_ms:
-                result.status = "FAILED"
-                result.error_code = "AC.RUN.TIMEOUT"
-                break
-            if result.token_input + result.token_output > run_ctx.token_budget:
-                result.status = "FAILED"
-                result.error_code = "AC.RUN.BUDGET_EXCEEDED"
-                break
+        graph = self._build_graph()
+        final_state = await graph.ainvoke(
+            initial, config={"recursion_limit": run_ctx.max_steps * 2 + 10}
+        )
 
-            step_no += 1
-            request = LLMRequest(messages=messages, model=primary, response_format={"type": "json_object"})
-            response = await self.router.complete(
-                self.session,
-                ctx,
-                request,
-                primary_model=primary,
-                fallback_model=fallback,
-                max_retries=int(model_policy.get("max_retries", 1)),
-                run_id=run_ctx.run_id,
-            )
-            result.token_input += response.token_input
-            result.token_output += response.token_output
-            await self._record_step(ctx, run_ctx, step_no, "MODEL_RESPONSE", response.content[:2000])
-            await self._emit({"event": "thinking", "data": {"step": step_no, "summary": "模型已完成本轮推理"}})
-
-            await self._save_checkpoint(run_ctx, step_no, result)
-            decision = parse_decision(response.content)
-            if isinstance(decision, FinalDecision):
-                await self._record_step(ctx, run_ctx, step_no, "FINAL_RESPONSE", decision.answer[:2000])
-                result.status = "COMPLETED"
-                result.answer = decision.answer
-                break
-            if isinstance(decision, ClarifyDecision):
-                await self._record_step(ctx, run_ctx, step_no, "CLARIFICATION", decision.question[:2000])
-                result.status = "WAITING_USER"
-                result.question = decision.question
-                break
-            if isinstance(decision, SlotsDecision):
-                state = await self._load_state(run_ctx)
-                for name, value in decision.slots.items():
-                    merge_slot(state, name, value, source="model", confidence=0.8)
-                await self._save_state(run_ctx, state)
-                await self._record_step(
-                    ctx,
-                    run_ctx,
-                    step_no,
-                    "STATE_TRANSITION",
-                    json.dumps(decision.slots, ensure_ascii=False)[:2000],
-                )
-                question = next_clarification(state, run_ctx.agent_config.get("slot_questions") or {})
-                if question:
-                    await self._record_step(ctx, run_ctx, step_no, "CLARIFICATION", question[:2000])
-                    result.status = "WAITING_USER"
-                    result.question = question
-                    break
-                messages.append(ChatMessage(role="user", content="槽位已记录，请继续。"))
-                continue
-            if isinstance(decision, HandoffDecision):
-                from app.domain.session.models import Conversation
-                from app.runtime.handoff import HandoffRequest, validate_and_apply
-
-                conversation = await self.session.get(Conversation, run_ctx.conversation_id)
-                if conversation is None:
-                    raise AppError("会话不存在，无法交接")
-                try:
-                    target_agent, _ = await validate_and_apply(
-                        self.session,
-                        ctx,
-                        conversation,
-                        HandoffRequest(
-                            from_agent=run_ctx.agent_code,
-                            to_agent=decision.to_agent,
-                            reason=decision.reason,
-                            pending_slots=decision.pending_slots,
-                        ),
-                    )
-                except AppError as exc:
-                    await self._record_step(
-                        ctx, run_ctx, step_no, "HANDOFF", f"{decision.to_agent}: {exc.message}", status="FAILED"
-                    )
-                    messages.append(
-                        ChatMessage(role="user", content=f"交接失败：{exc.message}，请继续自行处理或转人工。")
-                    )
-                    continue
-                await self._record_step(
-                    ctx,
-                    run_ctx,
-                    step_no,
-                    "HANDOFF",
-                    f"{run_ctx.agent_code} -> {target_agent.code}: {decision.reason}"[:2000],
-                )
-                await self._emit(
-                    {
-                        "event": "handoff",
-                        "data": {
-                            "from": run_ctx.agent_code,
-                            "to": target_agent.code,
-                            "reason": decision.reason,
-                        },
-                    }
-                )
-                result.status = "HANDOFF"
-                result.answer = f"已为你转接到{target_agent.name}，请继续描述你的需求。"
-                break
-            if isinstance(decision, ToolCallDecision):
-                if decision.tool not in run_ctx.allowed_tools:
-                    await self._record_step(
-                        ctx, run_ctx, step_no, "TOOL_CALL", f"未授权工具: {decision.tool}", status="FAILED"
-                    )
-                    messages.append(
-                        ChatMessage(role="user", content=f"工具 {decision.tool} 未被授权，请改用可用工具或直接回答。")
-                    )
-                    continue
-                await self._emit({"event": "tool.call", "data": {"toolCode": decision.tool, "arguments": decision.arguments}})
-                tool_definition = await self._get_tool(ctx, decision.tool)
-                if tool_definition is not None and tool_definition.write_operation:
-                    from app.domain.tool.confirmation import create_confirmation
-
-                    summary = self._confirmation_summary(tool_definition.name, decision.arguments)
-                    confirmation = await create_confirmation(
-                        self.session,
-                        ctx,
-                        run_id=run_ctx.run_id,
-                        conversation_id=run_ctx.conversation_id,
-                        tool_code=decision.tool,
-                        arguments=decision.arguments,
-                        summary=summary,
-                    )
-                    await self._record_step(
-                        ctx, run_ctx, step_no, "STATE_TRANSITION", f"等待确认: {confirmation.confirmation_id}"
-                    )
-                    await self._emit(
-                        {
-                            "event": "confirmation.required",
-                            "data": {
-                                "confirmationId": confirmation.confirmation_id,
-                                "toolCode": decision.tool,
-                                "summary": summary,
-                            },
-                        }
-                    )
-                    result.status = "WAITING_CONFIRM"
-                    result.confirmation_id = confirmation.confirmation_id
-                    result.confirmation_summary = summary
-                    break
-                try:
-                    tool_result = await invoke_tool(
-                        self.session,
-                        ctx,
-                        self.tool_executor,
-                        tool_code=decision.tool,
-                        arguments=decision.arguments,
-                        tool_context=ToolContext(
-                            tenant_id=ctx.tenant_id,
-                            user_id=ctx.user_id,
-                            conversation_id=run_ctx.conversation_id,
-                            run_id=run_ctx.run_id,
-                            trace_id=run_ctx.trace_id,
-                        ),
-                        allow_write=False,
-                    )
-                except AppError as exc:
-                    await self._record_step(
-                        ctx, run_ctx, step_no, "TOOL_CALL", f"{decision.tool}: {exc.message}", status="FAILED"
-                    )
-                    messages.append(
-                        ChatMessage(role="user", content=f"工具 {decision.tool} 调用失败：{exc.message}")
-                    )
-                    continue
-                result.tool_calls += 1
-                await self._emit(
-                    {
-                        "event": "tool.result",
-                        "data": {
-                            "toolCode": decision.tool,
-                            "status": tool_result.status,
-                            "summary": json.dumps(tool_result.output, ensure_ascii=False)[:500],
-                        },
-                    }
-                )
-                await self._record_step(
-                    ctx,
-                    run_ctx,
-                    step_no,
-                    "TOOL_RESULT",
-                    json.dumps(tool_result.output, ensure_ascii=False)[:2000],
-                    status=tool_result.status,
-                )
-                messages.append(
-                    ChatMessage(
-                        role="user",
-                        content=(
-                            "<tool_result untrusted=\"true\">"
-                            + json.dumps(tool_result.output, ensure_ascii=False)
-                            + "</tool_result>\n请基于工具结果继续推理。"
-                        ),
-                    )
-                )
-                continue
-        else:
-            result.status = "FAILED"
-            result.error_code = "AC.RUN.STEP_BUDGET_EXCEEDED"
-
-        result.steps = step_no
+        result = RuntimeResult(
+            run_id=run_ctx.run_id,
+            status=final_state.get("status", "FAILED"),
+            answer=final_state.get("answer", ""),
+            question=final_state.get("question", ""),
+            steps=final_state.get("step", 0),
+            tool_calls=final_state.get("tool_calls", 0),
+            token_input=final_state.get("token_input", 0),
+            token_output=final_state.get("token_output", 0),
+            error_code=final_state.get("error_code"),
+            confirmation_id=final_state.get("confirmation_id"),
+            confirmation_summary=final_state.get("confirmation_summary", ""),
+        )
         await self._finish(ctx, run_ctx, result)
         return result
+
+    def _build_graph(self):
+        graph = StateGraph(GraphState)
+        graph.add_node("decide", self._decide)
+        graph.add_node("act", self._act)
+        graph.set_entry_point("decide")
+        graph.add_conditional_edges("decide", self._after_decide, {"act": "act", "end": END})
+        graph.add_conditional_edges("act", self._after_act, {"decide": "decide", "end": END})
+        return graph.compile()
+
+    # ---------- LangGraph 节点 ----------
+
+    async def _decide(self, state: GraphState) -> GraphState:
+        ctx = self._ctx
+        run_ctx = self._run_ctx
+        assert ctx is not None and run_ctx is not None
+
+        if self.registry is not None and self.registry.is_interrupted(run_ctx.run_id):
+            return {**state, "status": "INTERRUPTED"}
+
+        if (time.monotonic() - self._started) * 1000 > run_ctx.timeout_ms:
+            return {**state, "status": "FAILED", "error_code": "AC.RUN.TIMEOUT"}
+
+        if state.get("token_input", 0) + state.get("token_output", 0) > run_ctx.token_budget:
+            return {**state, "status": "FAILED", "error_code": "AC.RUN.BUDGET_EXCEEDED"}
+
+        if state["step"] >= run_ctx.max_steps:
+            return {**state, "status": "FAILED", "error_code": "AC.RUN.STEP_BUDGET_EXCEEDED"}
+
+        step_no = state["step"] + 1
+        model_policy = run_ctx.model_policy or {}
+        primary = model_policy.get("primary", "stub-primary")
+        fallback = model_policy.get("fallback")
+
+        request = LLMRequest(
+            messages=[ChatMessage(role=m["role"], content=m["content"]) for m in state["messages"]],
+            model=primary,
+            response_format={"type": "json_object"},
+        )
+        response = await self.router.complete(
+            self.session,
+            ctx,
+            request,
+            primary_model=primary,
+            fallback_model=fallback,
+            max_retries=int(model_policy.get("max_retries", 1)),
+            run_id=run_ctx.run_id,
+        )
+        await self._record_step(ctx, run_ctx, step_no, "MODEL_RESPONSE", response.content[:2000])
+        await self._emit({"event": "thinking", "data": {"step": step_no, "summary": "模型已完成本轮推理"}})
+
+        preview = RuntimeResult(
+            run_id=run_ctx.run_id,
+            status="RUNNING",
+            token_input=state.get("token_input", 0) + response.token_input,
+            token_output=state.get("token_output", 0) + response.token_output,
+            tool_calls=state.get("tool_calls", 0),
+        )
+        await self._save_checkpoint(run_ctx, step_no, preview)
+
+        decision = parse_decision(response.content)
+        return {
+            **state,
+            "step": step_no,
+            "token_input": preview.token_input,
+            "token_output": preview.token_output,
+            "decision": self._serialize_decision(decision),
+        }
+
+    async def _act(self, state: GraphState) -> GraphState:
+        ctx = self._ctx
+        run_ctx = self._run_ctx
+        assert ctx is not None and run_ctx is not None
+        decision = state.get("decision") or {}
+        step_no = state["step"]
+        kind = decision.get("type")
+
+        if kind == "final":
+            answer = decision.get("answer") or ""
+            await self._record_step(ctx, run_ctx, step_no, "FINAL_RESPONSE", answer[:2000])
+            return {**state, "status": "COMPLETED", "answer": answer}
+
+        if kind == "clarify":
+            question = decision.get("question") or ""
+            await self._record_step(ctx, run_ctx, step_no, "CLARIFICATION", question[:2000])
+            return {**state, "status": "WAITING_USER", "question": question}
+
+        if kind == "slots":
+            return await self._act_slots(ctx, run_ctx, state, decision.get("slots") or {}, step_no)
+
+        if kind == "handoff":
+            return await self._act_handoff(ctx, run_ctx, state, decision, step_no)
+
+        if kind == "tool_call":
+            return await self._act_tool(ctx, run_ctx, state, decision, step_no)
+
+        return {**state, "status": "FAILED", "error_code": "AC.RUN.UNKNOWN_DECISION"}
+
+    # ---------- 动作实现 ----------
+
+    async def _act_slots(
+        self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, slots: dict, step_no: int
+    ) -> GraphState:
+        session_state = await self._load_state(run_ctx)
+        for name, value in slots.items():
+            merge_slot(session_state, name, value, source="model", confidence=0.8)
+        await self._save_state(run_ctx, session_state)
+        await self._record_step(
+            ctx, run_ctx, step_no, "STATE_TRANSITION", json.dumps(slots, ensure_ascii=False)[:2000]
+        )
+        question = next_clarification(session_state, run_ctx.agent_config.get("slot_questions") or {})
+        if question:
+            await self._record_step(ctx, run_ctx, step_no, "CLARIFICATION", question[:2000])
+            return {**state, "status": "WAITING_USER", "question": question}
+        messages = state["messages"] + [{"role": "user", "content": "槽位已记录，请继续。"}]
+        return {**state, "messages": messages}
+
+    async def _act_tool(
+        self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
+    ) -> GraphState:
+        tool_code = decision.get("tool")
+        arguments = decision.get("arguments") or {}
+        if tool_code not in run_ctx.allowed_tools:
+            await self._record_step(
+                ctx, run_ctx, step_no, "TOOL_CALL", f"未授权工具: {tool_code}", status="FAILED"
+            )
+            messages = state["messages"] + [
+                {"role": "user", "content": f"工具 {tool_code} 未被授权，请改用可用工具或直接回答。"}
+            ]
+            return {**state, "messages": messages}
+
+        await self._emit({"event": "tool.call", "data": {"toolCode": tool_code, "arguments": arguments}})
+
+        tool_definition = await self._get_tool(ctx, tool_code)
+        if tool_definition is not None and tool_definition.write_operation:
+            from app.domain.tool.confirmation import create_confirmation
+
+            summary = self._confirmation_summary(tool_definition.name, arguments)
+            confirmation = await create_confirmation(
+                self.session,
+                ctx,
+                run_id=run_ctx.run_id,
+                conversation_id=run_ctx.conversation_id,
+                tool_code=tool_code,
+                arguments=arguments,
+                summary=summary,
+            )
+            await self._record_step(
+                ctx, run_ctx, step_no, "STATE_TRANSITION", f"等待确认: {confirmation.confirmation_id}"
+            )
+            await self._emit(
+                {
+                    "event": "confirmation.required",
+                    "data": {
+                        "confirmationId": confirmation.confirmation_id,
+                        "toolCode": tool_code,
+                        "summary": summary,
+                    },
+                }
+            )
+            return {
+                **state,
+                "status": "WAITING_CONFIRM",
+                "confirmation_id": confirmation.confirmation_id,
+                "confirmation_summary": summary,
+            }
+
+        try:
+            tool_result = await invoke_tool(
+                self.session,
+                ctx,
+                self.tool_executor,
+                tool_code=tool_code,
+                arguments=arguments,
+                tool_context=ToolContext(
+                    tenant_id=ctx.tenant_id,
+                    user_id=ctx.user_id,
+                    conversation_id=run_ctx.conversation_id,
+                    run_id=run_ctx.run_id,
+                    trace_id=run_ctx.trace_id,
+                ),
+                allow_write=False,
+            )
+        except AppError as exc:
+            await self._record_step(
+                ctx, run_ctx, step_no, "TOOL_CALL", f"{tool_code}: {exc.message}", status="FAILED"
+            )
+            messages = state["messages"] + [
+                {"role": "user", "content": f"工具 {tool_code} 调用失败：{exc.message}"}
+            ]
+            return {**state, "messages": messages}
+
+        await self._emit(
+            {
+                "event": "tool.result",
+                "data": {
+                    "toolCode": tool_code,
+                    "status": tool_result.status,
+                    "summary": json.dumps(tool_result.output, ensure_ascii=False)[:500],
+                },
+            }
+        )
+        await self._record_step(
+            ctx,
+            run_ctx,
+            step_no,
+            "TOOL_RESULT",
+            json.dumps(tool_result.output, ensure_ascii=False)[:2000],
+            status=tool_result.status,
+        )
+        messages = state["messages"] + [
+            {
+                "role": "user",
+                "content": (
+                    '<tool_result untrusted="true">'
+                    + json.dumps(tool_result.output, ensure_ascii=False)
+                    + "</tool_result>\n请基于工具结果继续推理。"
+                ),
+            }
+        ]
+        return {**state, "messages": messages, "tool_calls": state.get("tool_calls", 0) + 1}
+
+    async def _act_handoff(
+        self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
+    ) -> GraphState:
+        from app.domain.session.models import Conversation
+        from app.runtime.handoff import HandoffRequest, validate_and_apply
+
+        conversation = await self.session.get(Conversation, run_ctx.conversation_id)
+        if conversation is None:
+            raise AppError("会话不存在，无法交接")
+        try:
+            target_agent, _ = await validate_and_apply(
+                self.session,
+                ctx,
+                conversation,
+                HandoffRequest(
+                    from_agent=run_ctx.agent_code,
+                    to_agent=decision.get("to"),
+                    reason=decision.get("reason") or "",
+                    pending_slots=decision.get("pending_slots") or [],
+                ),
+            )
+        except AppError as exc:
+            await self._record_step(
+                ctx, run_ctx, step_no, "HANDOFF", f"{decision.get('to')}: {exc.message}", status="FAILED"
+            )
+            messages = state["messages"] + [
+                {"role": "user", "content": f"交接失败：{exc.message}，请继续自行处理或转人工。"}
+            ]
+            return {**state, "messages": messages}
+
+        await self._record_step(
+            ctx,
+            run_ctx,
+            step_no,
+            "HANDOFF",
+            f"{run_ctx.agent_code} -> {target_agent.code}: {decision.get('reason')}"[:2000],
+        )
+        await self._emit(
+            {
+                "event": "handoff",
+                "data": {
+                    "from": run_ctx.agent_code,
+                    "to": target_agent.code,
+                    "reason": decision.get("reason") or "",
+                },
+            }
+        )
+        return {
+            **state,
+            "status": "HANDOFF",
+            "answer": f"已为你转接到{target_agent.name}，请继续描述你的需求。",
+        }
+
+    # ---------- 条件边与工具方法 ----------
+
+    @staticmethod
+    def _serialize_decision(decision) -> dict:
+        if isinstance(decision, FinalDecision):
+            return {"type": "final", "answer": decision.answer}
+        if isinstance(decision, ClarifyDecision):
+            return {"type": "clarify", "question": decision.question}
+        if isinstance(decision, SlotsDecision):
+            return {"type": "slots", "slots": decision.slots}
+        if isinstance(decision, HandoffDecision):
+            return {
+                "type": "handoff",
+                "to": decision.to_agent,
+                "reason": decision.reason,
+                "pending_slots": decision.pending_slots,
+            }
+        if isinstance(decision, ToolCallDecision):
+            return {"type": "tool_call", "tool": decision.tool, "arguments": decision.arguments}
+        return {"type": "unknown"}
+
+    @staticmethod
+    def _after_decide(state: GraphState) -> str:
+        if state.get("status") in TERMINAL_STATUSES:
+            return "end"
+        return "act"
+
+    @staticmethod
+    def _after_act(state: GraphState) -> str:
+        if state.get("status") in TERMINAL_STATUSES:
+            return "end"
+        return "decide"
 
     async def _get_tool(self, ctx: TenantContext, tool_code: str):
         from app.domain.tool.service import get_tool
@@ -340,10 +489,7 @@ class ReActExecutor:
                 step_no=step_no,
                 state_json={
                     "stepNo": step_no,
-                    "tokenUsage": {
-                        "input": result.token_input,
-                        "output": result.token_output,
-                    },
+                    "tokenUsage": {"input": result.token_input, "output": result.token_output},
                     "toolCalls": result.tool_calls,
                     "agentCode": run_ctx.agent_code,
                 },

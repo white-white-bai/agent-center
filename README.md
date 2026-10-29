@@ -1,6 +1,6 @@
 # Agent Center
 
-政务智能体中台（Agent Center）后端实现。技术栈：Python 3.11 + FastAPI + SQLAlchemy（异步）。
+政务智能体中台（Agent Center）后端实现。技术栈：Python 3.11 + FastAPI + SQLAlchemy（异步）+ LangGraph。
 支持 Agent 定义与发布、多轮会话、ReAct 运行时、工具中心、知识检索、记忆与画像、评测与运营。
 
 ## 快速开始
