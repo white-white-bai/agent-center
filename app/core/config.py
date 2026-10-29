@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     app_name: str = "agent-center"
     database_url: str = "sqlite+aiosqlite:///./agent_center.db"
     db_echo: bool = False
+    model_provider: str = "stub"
+    stub_reply: str = '{"type":"final","answer":"这是桩模型的回复"}'
 
 
 @lru_cache

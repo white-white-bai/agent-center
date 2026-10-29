@@ -1,6 +1,8 @@
 import json
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,11 +38,28 @@ def build_system_prompt(config: dict, allowed_tools: list[str]) -> str:
     )
 
 
+EventSink = Callable[[dict[str, Any]], Awaitable[None]]
+
+
 class ReActExecutor:
-    def __init__(self, session: AsyncSession, router: ModelRouter, tool_executor: ToolExecutor) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        router: ModelRouter,
+        tool_executor: ToolExecutor,
+        *,
+        on_event: EventSink | None = None,
+        registry=None,
+    ) -> None:
         self.session = session
         self.router = router
         self.tool_executor = tool_executor
+        self.on_event = on_event
+        self.registry = registry
+
+    async def _emit(self, event: dict[str, Any]) -> None:
+        if self.on_event is not None:
+            await self.on_event(event)
 
     async def run(self, ctx: TenantContext, run_ctx: RunContext) -> RuntimeResult:
         from app.domain.session.models import Run, RunStep
@@ -63,6 +82,10 @@ class ReActExecutor:
 
         step_no = 0
         while step_no < run_ctx.max_steps:
+            if self.registry is not None and self.registry.is_interrupted(run_ctx.run_id):
+                result.status = "INTERRUPTED"
+                result.error_code = None
+                break
             if (time.monotonic() - started) * 1000 > run_ctx.timeout_ms:
                 result.status = "FAILED"
                 result.error_code = "AC.RUN.TIMEOUT"
@@ -86,6 +109,7 @@ class ReActExecutor:
             result.token_input += response.token_input
             result.token_output += response.token_output
             await self._record_step(ctx, run_ctx, step_no, "MODEL_RESPONSE", response.content[:2000])
+            await self._emit({"event": "thinking", "data": {"step": step_no, "summary": "模型已完成本轮推理"}})
 
             decision = parse_decision(response.content)
             if isinstance(decision, FinalDecision):
@@ -107,6 +131,7 @@ class ReActExecutor:
                         ChatMessage(role="user", content=f"工具 {decision.tool} 未被授权，请改用可用工具或直接回答。")
                     )
                     continue
+                await self._emit({"event": "tool.call", "data": {"toolCode": decision.tool, "arguments": decision.arguments}})
                 try:
                     tool_result = await invoke_tool(
                         self.session,
@@ -132,6 +157,16 @@ class ReActExecutor:
                     )
                     continue
                 result.tool_calls += 1
+                await self._emit(
+                    {
+                        "event": "tool.result",
+                        "data": {
+                            "toolCode": decision.tool,
+                            "status": tool_result.status,
+                            "summary": json.dumps(tool_result.output, ensure_ascii=False)[:500],
+                        },
+                    }
+                )
                 await self._record_step(
                     ctx,
                     run_ctx,

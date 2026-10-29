@@ -25,6 +25,20 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
+async def async_client(db_session: AsyncSession) -> AsyncIterator[object]:
+    from httpx import ASGITransport, AsyncClient
+
+    async def _override_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = _override_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def client(db_session: AsyncSession) -> AsyncIterator[TestClient]:
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield db_session
