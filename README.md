@@ -49,6 +49,7 @@ X-Trace-Id: trace_xxx
 | 对话 | `POST /api/v1/chat/sessions/{id}/messages`（SSE）、`POST .../interrupt` |
 | 确认 | `POST /api/v1/chat/sessions/{id}/confirmations/{cid}` |
 | 轨迹 | `GET /api/v1/chat/sessions/{id}/runs/{runId}`、`.../events?lastEventId=` |
+| 恢复 | `POST /api/v1/chat/sessions/{id}/runs/{runId}/resume` |
 | 反馈 | `POST /api/v1/feedback` |
 | Agent | `GET/POST /api/v1/admin/agents`、`.../{id}/versions`、`.../{id}/publish` |
 | 提示词 | `POST /api/v1/admin/prompts`、`.../{id}/versions`、`.../transition` |

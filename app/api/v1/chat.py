@@ -83,6 +83,30 @@ async def send_message(
     )
 
 
+@router.post("/{session_id}/runs/{run_id}/resume")
+async def resume_run(
+    session_id: int,
+    run_id: str,
+    session: DbSession,
+    ctx: CurrentTenant,
+    router: ModelRouterDep,
+    tool_executor: ToolExecutorDep,
+) -> dict:
+    from app.domain.session import resume, run_service
+
+    conversation = await service.get_conversation(session, ctx, session_id)
+    old_run = await run_service.get_run(session, ctx, run_id, conversation_id=session_id)
+    result = await resume.resume_run(
+        session,
+        ctx,
+        conversation,
+        old_run,
+        router=router,
+        tool_executor=tool_executor,
+    )
+    return ok(result)
+
+
 class InterruptRequest(BaseModel):
     runId: str = Field(min_length=1, max_length=64)
     reason: str = Field(default="user_interrupt", max_length=100)
