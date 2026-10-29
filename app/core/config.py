@@ -11,6 +11,14 @@ class Settings(BaseSettings):
     db_echo: bool = False
     auto_create_tables: bool = True
     model_provider: str = "stub"
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = "deepseek/deepseek-v4.1-flash"
+    llm_fallback_model: str = "deepseek/deepseek-v4.1"
+    llm_timeout_ms: int = 30000
+    embedding_model: str = ""
+    embedding_dim: int = 1024
+    redis_url: str = ""
     memory_extraction_enabled: bool = False
     sensitive_words: str = ""
     moderation_url: str | None = None

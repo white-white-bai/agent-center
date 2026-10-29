@@ -204,7 +204,13 @@ async def _stream_message_locked(
     async def on_event(event: dict) -> None:
         await queue.put(event)
 
-    token_budget = int(version.model_policy_json.get("token_budget", 32000))
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    model_policy = dict(version.model_policy_json or {})
+    model_policy.setdefault("primary", settings.llm_model)
+    model_policy.setdefault("fallback", settings.llm_fallback_model)
+    token_budget = int(model_policy.get("token_budget", 32000))
     system_prompt, knowledge_results = await _build_system_prompt(
         session, ctx, conversation, version, user_message.id, text, token_budget, agent
     )
@@ -219,11 +225,11 @@ async def _stream_message_locked(
         trace_id=trace_id,
         user_message=text,
         agent_config=version.config_json,
-        model_policy=version.model_policy_json,
+        model_policy=model_policy,
         allowed_tools=list(version.tool_bindings_json or []),
-        max_steps=int(version.model_policy_json.get("max_steps", 8)),
+        max_steps=int(model_policy.get("max_steps", 8)),
         token_budget=token_budget,
-        timeout_ms=int(version.model_policy_json.get("timeout_ms", 30000)),
+        timeout_ms=int(model_policy.get("timeout_ms", settings.llm_timeout_ms)),
         system_prompt=system_prompt,
     )
     executor = ReActExecutor(
