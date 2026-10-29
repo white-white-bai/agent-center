@@ -81,6 +81,7 @@ async def overview(session: AsyncSession, ctx: TenantContext) -> dict:
         "models": {
             "calls": model_total or 0,
             "success": int(model_success or 0),
+            "successRate": round((model_success or 0) / model_total, 4) if model_total else 0.0,
             "avgLatencyMs": round(float(model_avg_latency or 0), 2),
         },
     }

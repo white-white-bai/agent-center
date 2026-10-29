@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     memory_extraction_enabled: bool = False
     sse_heartbeat_seconds: float = 15.0
     trace_retention_days: int = 90
+    alert_webhook_url: str = ""
+    alert_tool_success_rate_min: float = 0.9
+    alert_run_failure_rate_max: float = 0.2
+    alert_badcase_open_max: int = 50
+    alert_model_success_rate_min: float = 0.9
     credential_key: str = ""
     sensitive_words: str = ""
     moderation_url: str | None = None

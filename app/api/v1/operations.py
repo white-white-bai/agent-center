@@ -130,6 +130,28 @@ async def list_sessions(
     )
 
 
+@router.get("/admin/metrics/prometheus")
+async def prometheus_metrics(session: DbSession, ctx: AdminContext):
+    from fastapi.responses import PlainTextResponse
+
+    from app.domain.evaluation import alerts, metrics
+
+    data = await metrics.overview(session, ctx)
+    return PlainTextResponse(
+        alerts.render_prometheus(data),
+        media_type=alerts.prometheus_content_type(),
+    )
+
+
+@router.post("/admin/alerts/check")
+async def check_alerts(session: DbSession, ctx: AdminContext) -> dict:
+    from app.domain.evaluation import alerts
+
+    found = await alerts.evaluate_alerts(session, ctx)
+    notified = await alerts.notify_alerts(found)
+    return ok({"alerts": [alert.to_dict() for alert in found], "notified": notified})
+
+
 @router.get("/admin/metrics/overview")
 async def metrics_overview(session: DbSession, ctx: AdminContext) -> dict:
     from app.domain.evaluation import metrics
