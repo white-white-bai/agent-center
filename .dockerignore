@@ -5,5 +5,9 @@ __pycache__/
 *.db
 .pytest_cache/
 .commandcode/
+.env
+.env.*
+!.env.example
 docs/
 tests/
+scripts/

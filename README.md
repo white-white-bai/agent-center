@@ -13,6 +13,30 @@ python -m venv .venv
 
 打开 http://127.0.0.1:8000/docs 查看 OpenAPI。默认使用 SQLite，启动时自动建表。
 
+## Docker 本地一键启动
+
+```bash
+# 可选：在项目根目录创建 .env 填写模型密钥（compose 会自动读取）
+#   AC_LLM_API_KEY=sk-xxx
+
+docker compose up -d --build
+```
+
+启动后：
+
+| 服务 | 地址 |
+| --- | --- |
+| 应用 / OpenAPI | http://localhost:8000/docs |
+| MySQL | localhost:3307（用户 `agent` / 密码 `agent_pass`，库 `agent_center`） |
+| Redis | localhost:6380 |
+| Milvus | 默认使用内嵌 Milvus Lite，数据在 `milvus_lite_data` 卷（`/data/milvus.db`） |
+
+说明：
+- 默认栈为 app + MySQL + Redis，启动时自动建表（`AC_AUTO_CREATE_TABLES=true`）。
+- 需要独立 Milvus 服务时：`AC_MILVUS_URI=http://milvus:19530 docker compose --profile milvus up -d`，该 profile 会拉起 etcd + MinIO + Milvus；部分网络环境拉取 MinIO 镜像会被拒绝。
+- 常用命令：`docker compose ps`、`docker compose logs -f app`、`docker compose down`（保留数据，`-v` 删除数据卷）。
+- 测试仍在宿主机执行（镜像不包含 tests）：`.venv\Scripts\python -m pytest -q`。
+
 ## 配置
 
 所有配置通过 `AC_` 前缀环境变量或 `.env` 注入：
