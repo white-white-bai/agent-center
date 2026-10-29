@@ -170,8 +170,8 @@ async def stream_message(
         await queue.put(event)
 
     token_budget = int(version.model_policy_json.get("token_budget", 32000))
-    system_prompt = await _build_system_prompt(
-        session, ctx, conversation, version, user_message.id, text, token_budget
+    system_prompt, knowledge_results = await _build_system_prompt(
+        session, ctx, conversation, version, user_message.id, text, token_budget, agent
     )
 
     run_ctx = RunContext(
@@ -221,6 +221,31 @@ async def stream_message(
         for chunk in _stream_answer(stream, result.answer):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
+        if knowledge_results:
+            for item in knowledge_results:
+                yield stream.format(
+                    "citation",
+                    {
+                        "runId": run_id,
+                        "docId": item["documentId"],
+                        "chunkId": item["chunkId"],
+                        "title": item["title"],
+                        "clause": item.get("section"),
+                        "url": item.get("sourceUrl"),
+                    },
+                )
+            try:
+                from app.domain.knowledge.citations import record_citations
+
+                await record_citations(
+                    session,
+                    ctx,
+                    run_id=run_id,
+                    results=knowledge_results,
+                    message_id=assistant_message.id,
+                )
+            except Exception:  # noqa: BLE001 - 引用落库失败不影响回答
+                pass
         turn.status = "ANSWERED"
         conversation.status = "ACTIVE"
         yield stream.format(
@@ -316,7 +341,8 @@ async def _build_system_prompt(
     user_message_id: int,
     text: str,
     token_budget: int,
-) -> str:
+    agent=None,
+) -> tuple[str, list[dict]]:
     from app.core.exceptions import ValidationError
     from app.domain.memory.service import search_memories
     from app.domain.profile.service import get_profile_summary
@@ -348,12 +374,28 @@ async def _build_system_prompt(
 
     profile_summary = ""
     memories: list[str] = []
+    knowledge_results: list[dict] = []
     try:
         profile_summary = await get_profile_summary(session, ctx)
         items = await search_memories(session, ctx, query=text, limit=5)
         memories = [f"{item.subject}：{item.object_value}" for item in items]
     except Exception:  # noqa: BLE001 - 画像/记忆不可用不得阻塞对话
         pass
+
+    try:
+        from app.domain.knowledge.service import search as search_knowledge
+
+        metadata = (conversation.session_state_json or {}).get("metadata") or {}
+        knowledge_results = await search_knowledge(
+            session,
+            ctx,
+            query=text,
+            domain_code=getattr(agent, "domain_code", None),
+            region_code=metadata.get("region_code"),
+            top_k=5,
+        )
+    except Exception:  # noqa: BLE001 - 知识检索不可用不得阻塞对话
+        knowledge_results = []
 
     built = await ContextBuilder(session).build(
         tenant_id=ctx.tenant_id,
@@ -363,9 +405,10 @@ async def _build_system_prompt(
         token_budget=token_budget,
         profile_summary=profile_summary,
         memories=memories,
+        knowledge_snippets=[f"{item['title']}（{item.get('section') or '正文'}）：{item['content']}" for item in knowledge_results],
         exclude_message_id=user_message_id,
     )
-    return built.to_prompt()
+    return built.to_prompt(), knowledge_results
 
 
 async def _first_published_agent(session: AsyncSession, ctx: TenantContext):

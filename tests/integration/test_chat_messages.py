@@ -160,6 +160,56 @@ async def test_context_includes_profile_memory_and_state(async_client) -> None:
     assert "会话状态" in system_prompt
 
 
+async def test_answer_emits_citations_and_persists_them(async_client, db_session) -> None:
+    from app.domain.session.models import Citation
+
+    await _prepare_agent(async_client)
+    _override_router(ScriptedClient(['{"type":"final","answer":"需要身份证和申请书。"}']))
+
+    space_id = (
+        await async_client.post(
+            "/api/v1/admin/knowledge-spaces",
+            json={"code": "district", "name": "区级知识", "domainCode": "district_service"},
+            headers=HEADERS,
+        )
+    ).json()["data"]["id"]
+    document_id = (
+        await async_client.post(
+            f"/api/v1/admin/knowledge-spaces/{space_id}/documents",
+            json={
+                "title": "营业执照办理指南",
+                "content": "# 申请材料\n\n申请人需要提交身份证和营业执照申请书。",
+                "sourceUrl": "https://example.gov.cn/guide",
+            },
+            headers=HEADERS,
+        )
+    ).json()["data"]["id"]
+    await async_client.post(
+        f"/api/v1/admin/knowledge-spaces/{space_id}/documents/{document_id}/publish",
+        headers=HEADERS,
+    )
+
+    session_id = (
+        await async_client.post("/api/v1/chat/sessions", json={"channel": "web"}, headers=HEADERS)
+    ).json()["data"]["sessionId"]
+
+    response = await async_client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"message": "营业执照需要哪些材料"},
+        headers=HEADERS,
+    )
+
+    events = _sse_events(response.text)
+    citation_events = [data for name, data in events if name == "citation"]
+    assert citation_events
+    assert citation_events[0]["title"] == "营业执照办理指南"
+    assert citation_events[0]["url"] == "https://example.gov.cn/guide"
+
+    citations = (await db_session.execute(select(Citation))).scalars().all()
+    assert len(citations) == 1
+    assert citations[0].chunk_id == citation_events[0]["chunkId"]
+
+
 async def test_streaming_requires_published_agent(async_client) -> None:
     session_id = (
         await async_client.post("/api/v1/chat/sessions", json={"channel": "web"}, headers=HEADERS)
