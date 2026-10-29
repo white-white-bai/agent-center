@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database.base import Base, TenantMixin, TimestampMixin
+from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
 
 
 class AgentDefinition(Base, TenantMixin, TimestampMixin):
     __tablename__ = "agent_definition"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     code: Mapped[str] = mapped_column(String(100), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     domain_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
@@ -21,7 +21,7 @@ class AgentDefinition(Base, TenantMixin, TimestampMixin):
 class AgentVersion(Base, TenantMixin, TimestampMixin):
     __tablename__ = "agent_version"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     agent_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(nullable=False)
     config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

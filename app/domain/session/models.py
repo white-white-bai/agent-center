@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database.base import Base, TenantMixin, TimestampMixin
+from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
 
 
 class Conversation(Base, TenantMixin, TimestampMixin):
     __tablename__ = "conversation"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
@@ -24,7 +24,7 @@ class Conversation(Base, TenantMixin, TimestampMixin):
 class ConversationTurn(Base, TenantMixin, TimestampMixin):
     __tablename__ = "conversation_turn"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     turn_no: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")
@@ -37,7 +37,7 @@ class ConversationTurn(Base, TenantMixin, TimestampMixin):
 class Message(Base, TenantMixin, TimestampMixin):
     __tablename__ = "message"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     turn_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -75,7 +75,7 @@ class Run(Base, TenantMixin):
 class RunStep(Base, TenantMixin):
     __tablename__ = "run_step"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     step_no: Mapped[int] = mapped_column(Integer, nullable=False)
     step_type: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -93,7 +93,7 @@ class RunStep(Base, TenantMixin):
 class RunCheckpoint(Base, TenantMixin):
     __tablename__ = "run_checkpoint"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     checkpoint_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     step_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -104,7 +104,7 @@ class RunCheckpoint(Base, TenantMixin):
 class Citation(Base, TenantMixin):
     __tablename__ = "citation"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     message_id: Mapped[int | None] = mapped_column(BigInteger)
     document_id: Mapped[str] = mapped_column(String(64), nullable=False)

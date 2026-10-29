@@ -1,13 +1,13 @@
 from sqlalchemy import JSON, BigInteger, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database.base import Base, TenantMixin, TimestampMixin
+from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
 
 
 class ModelProvider(Base, TenantMixin, TimestampMixin):
     __tablename__ = "model_provider"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     provider_code: Mapped[str] = mapped_column(String(50), nullable=False)
     model_alias: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     capabilities_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -17,7 +17,7 @@ class ModelProvider(Base, TenantMixin, TimestampMixin):
 class ModelRoutePolicy(Base, TenantMixin, TimestampMixin):
     __tablename__ = "model_route_policy"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     policy_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(50), nullable=False)
     primary_model: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -31,7 +31,7 @@ class ModelRoutePolicy(Base, TenantMixin, TimestampMixin):
 class ModelUsageLog(Base, TenantMixin, TimestampMixin):
     __tablename__ = "model_usage_log"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     run_id: Mapped[str | None] = mapped_column(String(64), index=True)
     model_alias: Mapped[str] = mapped_column(String(100), nullable=False)
     provider_code: Mapped[str | None] = mapped_column(String(50))

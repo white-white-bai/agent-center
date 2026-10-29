@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database.base import Base, TenantMixin, TimestampMixin
+from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
 
 
 class KnowledgeSpace(Base, TenantMixin, TimestampMixin):
     __tablename__ = "knowledge_space"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     layer: Mapped[str] = mapped_column(String(20), nullable=False, default="DOMAIN")
@@ -20,7 +20,7 @@ class KnowledgeSpace(Base, TenantMixin, TimestampMixin):
 class KnowledgeDocument(Base, TenantMixin, TimestampMixin):
     __tablename__ = "knowledge_document"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     space_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     document_code: Mapped[str] = mapped_column(String(100), nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -37,7 +37,7 @@ class KnowledgeDocument(Base, TenantMixin, TimestampMixin):
 class KnowledgeChunk(Base, TenantMixin, TimestampMixin):
     __tablename__ = "knowledge_chunk"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     chunk_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     document_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     document_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -58,7 +58,7 @@ class KnowledgeChunk(Base, TenantMixin, TimestampMixin):
 class KnowledgeRouteRule(Base, TenantMixin, TimestampMixin):
     __tablename__ = "knowledge_route_rule"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     domain_code: Mapped[str] = mapped_column(String(100), nullable=False)
     intent_keywords_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     space_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -68,7 +68,7 @@ class KnowledgeRouteRule(Base, TenantMixin, TimestampMixin):
 class KnowledgeSyncTask(Base, TenantMixin, TimestampMixin):
     __tablename__ = "knowledge_sync_task"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     space_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="UPLOAD")
     source_ref: Mapped[str | None] = mapped_column(String(500))

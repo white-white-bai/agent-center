@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, DateTime, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database.base import Base, TenantMixin, TimestampMixin
+from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
 
 
 class UserProfile(Base, TenantMixin, TimestampMixin):
     __tablename__ = "user_profile"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     identity_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     style_preferences_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -18,7 +18,7 @@ class UserProfile(Base, TenantMixin, TimestampMixin):
 class UserProfileTag(Base, TenantMixin, TimestampMixin):
     __tablename__ = "user_profile_tag"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     tag_key: Mapped[str] = mapped_column(String(100), nullable=False)
     tag_value: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -29,7 +29,7 @@ class UserProfileTag(Base, TenantMixin, TimestampMixin):
 class UserEvent(Base, TenantMixin):
     __tablename__ = "user_event"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database.base import Base, TenantMixin, TimestampMixin
+from app.infrastructure.database.base import Base, BigIntPK, TenantMixin, TimestampMixin
 
 
 class ToolDefinition(Base, TenantMixin, TimestampMixin):
     __tablename__ = "tool_definition"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     tool_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -32,7 +32,7 @@ class ToolDefinition(Base, TenantMixin, TimestampMixin):
 class ToolBinding(Base, TenantMixin, TimestampMixin):
     __tablename__ = "tool_binding"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     agent_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     tool_code: Mapped[str] = mapped_column(String(100), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -41,7 +41,7 @@ class ToolBinding(Base, TenantMixin, TimestampMixin):
 class ToolInvokeLog(Base, TenantMixin):
     __tablename__ = "tool_invoke_log"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     run_id: Mapped[str | None] = mapped_column(String(64), index=True)
     tool_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     user_id: Mapped[str | None] = mapped_column(String(64))
@@ -57,7 +57,7 @@ class ToolInvokeLog(Base, TenantMixin):
 class ToolIdempotencyRecord(Base, TenantMixin, TimestampMixin):
     __tablename__ = "tool_idempotency_record"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     tool_code: Mapped[str] = mapped_column(String(100), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     arguments_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -69,7 +69,7 @@ class ToolIdempotencyRecord(Base, TenantMixin, TimestampMixin):
 class ToolConfirmation(Base, TenantMixin, TimestampMixin):
     __tablename__ = "tool_confirmation"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     confirmation_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     conversation_id: Mapped[int] = mapped_column(BigInteger, nullable=False)

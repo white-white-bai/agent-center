@@ -1,7 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import BigInteger, DateTime, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# SQLite 仅对 INTEGER PRIMARY KEY 提供自增，测试库使用 Integer 变体。
+BigIntPK = BigInteger().with_variant(Integer, "sqlite")
 
 
 class Base(DeclarativeBase):
