@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     moderation_blocked_field: str = "blocked"
     moderation_reason_field: str = "reason"
     moderation_category_field: str = "category"
+    dify_base_url: str = ""
+    dify_api_key: str = ""
+    dify_timeout_ms: int = 15000
+    dify_page_size: int = 100
     stub_reply: str = '{"type":"final","answer":"这是桩模型的回复"}'
 
 

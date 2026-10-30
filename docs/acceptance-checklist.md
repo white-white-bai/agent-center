@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，310 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，313 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -19,7 +19,7 @@
 | --- | --- | --- | --- | --- |
 | A1 | 真实模型联调 | 仅桩模型 | 联调报告、样例集、`model_usage_log` 截图 | 50 条真实问题中决策 JSON 解析成功率 ≥ 98%；流式首 token 正常；工具调用与降级模型各验证 10 次 |
 | A2 | 审核服务联调 | **部分通过**：协议/鉴权/字段映射完成，输入输出各 20 条与失败拒绝自动化通过；真实服务待联调，见 `docs/moderation-integration-report.md` | 审核客户端、联调记录 | 输入/输出各 20 条用例拦截正确；审核服务不可用时按策略拒绝且返回兜底话术，不输出未审内容 |
-| A3 | Dify/knowflow 迁移试点 | 仅有通用同步任务 | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
+| A3 | Dify/knowflow 迁移试点 | **部分通过**：Dify 文档/分段导入、断点重试与执行接口完成并自动化验证；真实 dataset/30 题评测与 chatflow 工具待做，见 `docs/dify-migration-report.md` | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
 | A4 | 生产建表与 MySQL 冒烟 | **本地通过**：DDL 41 表、关闭自动建表、CRUD/SSE 冒烟通过；生产 DBA 执行待做，见 `docs/ddl-smoke-report.md` | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
 | A5 | 前端与 SSE 联调 | **部分通过**：新增会话级长连接/心跳/Last-Event-ID 续传并通过自动化；30 分钟真实网关与前端联调待做，见 `docs/sse-integration-report.md` | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
 | A6 | 性能压测 | **部分通过**：2000/200 桩模型 0% 错误；单节点 TTFT P95 8.48s、E2E P95 12.78s 未达标，见 `docs/load-test-report.md` | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
@@ -126,13 +126,14 @@ Prometheus 指标与 Span 联动看板已完成：
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 310 passed
+- 自动化测试：`python -m pytest -q` → 313 passed
 - 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
 - DDL：全新库执行 41 表，`AC_AUTO_CREATE_TABLES=false` 启动并通过 CRUD/SSE 冒烟，详见 `docs/ddl-smoke-report.md`
 - SSE：会话级长连接、心跳、Last-Event-ID 续传、租户隔离测试通过，详见 `docs/sse-integration-report.md`
+- Dify：文档/分段分页导入、断点幂等、同步执行接口与检索命中自动化通过，详见 `docs/dify-migration-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）

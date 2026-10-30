@@ -23,6 +23,91 @@ async def http_fetcher(source_ref: str) -> list[dict]:
     return list(payload)
 
 
+async def dify_fetcher(
+    source_ref: str,
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    page_size: int | None = None,
+    timeout_ms: int | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> list[dict]:
+    """拉取 Dify 数据集文档及分段，转换为知识同步载荷。
+
+    source_ref 为 Dify dataset_id；地址与密钥来自 AC_DIFY_* 配置。
+    """
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    base = (base_url or settings.dify_base_url).rstrip("/")
+    key = api_key or settings.dify_api_key
+    limit = page_size or settings.dify_page_size
+    timeout = (timeout_ms or settings.dify_timeout_ms) / 1000
+    if not base or not key:
+        raise ValueError("未配置 Dify 地址或 API Key")
+    if not source_ref:
+        raise ValueError("缺少 Dify dataset_id")
+
+    documents: list[dict] = []
+    async with httpx.AsyncClient(
+        base_url=base,
+        headers={"Authorization": f"Bearer {key}"},
+        timeout=timeout,
+        transport=transport,
+    ) as client:
+        page = 1
+        while True:
+            response = await client.get(
+                f"/v1/datasets/{source_ref}/documents",
+                params={"page": page, "limit": limit},
+            )
+            response.raise_for_status()
+            body = response.json()
+            items = body.get("data") or []
+            for item in items:
+                document_id = str(item.get("id") or "")
+                if not document_id:
+                    continue
+                segments = await _dify_segments(client, source_ref, document_id, limit)
+                content = "\n\n".join(segments).strip()
+                if not content:
+                    continue
+                documents.append(
+                    {
+                        "document_code": f"dify:{source_ref}:{document_id}",
+                        "title": item.get("name") or document_id,
+                        "content": content,
+                        "authority_level": 3,
+                    }
+                )
+            if not body.get("has_more"):
+                break
+            page += 1
+    return documents
+
+
+async def _dify_segments(
+    client: httpx.AsyncClient, dataset_id: str, document_id: str, limit: int
+) -> list[str]:
+    contents: list[str] = []
+    page = 1
+    while True:
+        response = await client.get(
+            f"/v1/datasets/{dataset_id}/documents/{document_id}/segments",
+            params={"page": page, "limit": limit},
+        )
+        response.raise_for_status()
+        body = response.json()
+        for segment in body.get("data") or []:
+            content = str(segment.get("content") or "").strip()
+            if content:
+                contents.append(content)
+        if not body.get("has_more"):
+            break
+        page += 1
+    return contents
+
+
 async def create_sync_task(
     session: AsyncSession,
     ctx: TenantContext,
@@ -102,7 +187,7 @@ async def run_sync_task(
             if fetcher is None:
                 if not task.source_ref:
                     raise ValueError("缺少同步来源")
-                fetcher = http_fetcher
+                fetcher = dify_fetcher if task.source_type == "DIFY" else http_fetcher
             documents = await fetcher(task.source_ref or "")
         for payload in documents:
             code = payload.get("document_code") or payload.get("id")

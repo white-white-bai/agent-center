@@ -101,6 +101,10 @@ docker compose up -d --build
 | `AC_MODERATION_API_KEY` | 空 | 审核服务密钥，以 `Authorization: Bearer` 发送 |
 | `AC_MODERATION_TIMEOUT_MS` | `2000` | 审核请求超时（毫秒） |
 | `AC_MEMORY_EXTRACTION_ENABLED` | `false` | 是否异步抽取记忆 |
+| `AC_DIFY_BASE_URL` | 空 | Dify API 地址，如 `https://api.dify.ai` |
+| `AC_DIFY_API_KEY` | 空 | Dify Dataset API Key |
+| `AC_DIFY_TIMEOUT_MS` | `15000` | Dify 请求超时（毫秒） |
+| `AC_DIFY_PAGE_SIZE` | `100` | Dify 文档/分段分页大小 |
 
 审核请求/响应字段可通过 `AC_MODERATION_TEXT_FIELD`、`AC_MODERATION_STAGE_FIELD`、`AC_MODERATION_BLOCKED_FIELD`、`AC_MODERATION_REASON_FIELD`、`AC_MODERATION_CATEGORY_FIELD` 覆盖，默认 `text / stage / blocked / reason / category`。
 
@@ -211,7 +215,7 @@ X-Trace-Id: trace_xxx
 | 提示词 | `POST /api/v1/admin/prompts`、`.../{id}/versions`、`.../transition` |
 | 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、`POST .../import-mcp`、凭证管理 |
 | 知识 | `POST /api/v1/admin/knowledge-spaces`、`.../documents`、`.../publish`、`POST /api/v1/knowledge/search` |
-| 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks` |
+| 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks`、`POST .../{id}/run`（支持 `sourceType=DIFY`） |
 | 知识版本 | `POST /api/v1/admin/knowledge-documents/{id}/versions`、`.../unpublish` |
 | 记忆/画像 | `GET /api/v1/memory`、`GET /api/v1/profile/summary`、`GET /api/v1/profile/suggestions` |
 | 评测 | `POST /api/v1/admin/eval-datasets`、`.../cases/import`（批量基线导入）、`POST /api/v1/admin/evaluations` |
