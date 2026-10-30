@@ -25,7 +25,14 @@ def percentile(values: list[float], ratio: float) -> float:
     return ordered[index]
 
 
-async def _prepare_agent(client: httpx.AsyncClient, base_url: str, headers: dict) -> None:
+async def _prepare_agent(
+    client: httpx.AsyncClient,
+    base_url: str,
+    headers: dict,
+    *,
+    primary_model: str,
+    fallback_model: str | None,
+) -> None:
     agent = (
         await client.post(
             f"{base_url}/api/v1/admin/agents",
@@ -33,11 +40,14 @@ async def _prepare_agent(client: httpx.AsyncClient, base_url: str, headers: dict
             json={"code": "load_agent", "name": "压测 Agent", "domain_code": "district_service"},
         )
     ).json()["data"]
+    model_policy = {"primary": primary_model, "max_steps": 3}
+    if fallback_model:
+        model_policy["fallback"] = fallback_model
     version = (
         await client.post(
             f"{base_url}/api/v1/admin/agents/{agent['id']}/versions",
             headers=headers,
-            json={"role": "压测", "model_policy": {"primary": "stub-primary", "max_steps": 3}},
+            json={"role": "压测", "model_policy": model_policy},
         )
     ).json()["data"]
     await client.post(
@@ -109,8 +119,11 @@ async def _one_session(
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:8001")
+    parser.add_argument("--base-urls", default="", help="多节点地址，逗号分隔；优先于 --base-url")
     parser.add_argument("--sessions", type=int, default=2000)
     parser.add_argument("--concurrency", type=int, default=200)
+    parser.add_argument("--primary-model", default="stub-primary")
+    parser.add_argument("--fallback-model", default="")
     parser.add_argument("--tenant", default=f"load_{datetime.now().strftime('%Y%m%d%H%M%S')}")
     args = parser.parse_args()
 
@@ -122,15 +135,22 @@ async def main() -> None:
     limits = httpx.Limits(
         max_connections=args.concurrency + 20, max_keepalive_connections=args.concurrency
     )
-    async with httpx.AsyncClient(timeout=120, limits=limits) as client:
-        await _prepare_agent(client, args.base_url, headers)
+    bases = [item.strip() for item in (args.base_urls or args.base_url).split(",") if item.strip()]
+    async with httpx.AsyncClient(timeout=180, limits=limits) as client:
+        await _prepare_agent(
+            client,
+            bases[0],
+            headers,
+            primary_model=args.primary_model,
+            fallback_model=args.fallback_model or None,
+        )
 
         semaphore = asyncio.Semaphore(args.concurrency)
         started = time.perf_counter()
         results = await asyncio.gather(
             *(
-                _one_session(client, args.base_url, headers, semaphore)
-                for _ in range(args.sessions)
+                _one_session(client, bases[index % len(bases)], headers, semaphore)
+                for index in range(args.sessions)
             )
         )
         elapsed = time.perf_counter() - started
@@ -141,6 +161,8 @@ async def main() -> None:
     e2e = [item["e2e_ms"] for item in ok]
     summary = {
         "tenant": args.tenant,
+        "baseUrls": bases,
+        "primaryModel": args.primary_model,
         "sessions": args.sessions,
         "concurrency": args.concurrency,
         "durationSeconds": round(elapsed, 2),

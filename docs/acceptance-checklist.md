@@ -22,7 +22,7 @@
 | A3 | Dify/knowflow 迁移试点 | **部分通过**：Dify 文档/分段导入、chatflow 工具、断点重试与执行接口完成并自动化验证；真实 dataset/30 题评测待做，见 `docs/dify-migration-report.md` | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
 | A4 | 生产建表与 MySQL 冒烟 | **本地通过**：DDL 41 表、关闭自动建表、CRUD/SSE 冒烟通过；生产 DBA 执行待做，见 `docs/ddl-smoke-report.md` | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
 | A5 | 前端与 SSE 联调 | **本地通过**：nginx 网关 30 分钟实测 1800.94s、119 心跳、最大间隔 15.07s、无断连；生产网关/前端与断网重连演练待做，见 `docs/a5-sse-gateway-report.md` | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
-| A6 | 性能压测 | **部分通过**：2000/200 桩模型错误率 0–0.15%；优化后 TTFT P95 6.3–6.6s、E2E P95 9.6–10.7s，仍超目标；本地微优化已到递减点，需横向扩容/快模型，见 `docs/load-test-report.md` | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
+| A6 | 性能压测 | **部分通过**：2000/200 桩模型 0–0.15% 错误、TTFT P95 6.3–6.6s、E2E P95 9.6–10.7s；真实模型双节点 40/20 零错误、TTFT P95 6.22s、E2E P95 6.25s（样本小、同机模拟），见 `docs/load-test-report.md`、`docs/real-model-multinode-report.md` | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
 | A7 | Redis/Milvus 生产形态 | **本地通过**：2 副本锁/限流验证 + 独立 Milvus 检索与重启持久化；生产集群/对象存储/调优待做，见 `docs/multi-instance-check-report.md`、`docs/milvus-standalone-report.md` | 多实例部署记录 | 2 个 app 副本下会话锁互斥、限流计数共享；独立 Milvus 检索结果与 Lite 一致；重启后数据不丢 |
 | A8 | 安全专项测试 | **自动化通过**：8 类用例全部正确拦截，报告见 `docs/security-test-report.md`；外部渗透测试待做 | 安全测试报告 | 跨租户读取、越权工具、伪造确认、重复写操作、敏感信息入记忆、删除后检索、提示词注入绕过 8 类用例全部不通过（即被正确拦截） |
 
@@ -128,7 +128,9 @@ Prometheus 指标与 Span 联动看板已完成：
 
 - 自动化测试：`python -m pytest -q` → 324 passed
 - 观测栈：Prometheus target up，Exemplar `trace_id` 可在 Tempo 查到 Trace，Grafana 数据源/看板加载，详见 `docs/observability-runtime-report.md`
-- 压测：三轮优化后单请求 0.284s→0.153s；2000/200 桩模型 0–0.15% 错误，TTFT P95 6.3–6.6s、E2E P95 9.6–10.7s（单节点仍未达标，需扩容/快模型），详见 `docs/load-test-report.md`
+- 压测：三轮优化后单请求 0.284s→0.153s；2000/200 桩模型 0–0.15% 错误，TTFT P95 6.3–6.6s、E2E P95 9.6–10.7s（单节点仍未达标），详见 `docs/load-test-report.md`
+- 真实模型双节点：40/20 零错误、40 次真实调用全成功，TTFT P95 6.22s、E2E P95 6.25s，详见 `docs/real-model-multinode-report.md`
+- 上下文/LangGraph 剖析：检索早退后上下文装配 ~11ms、LangGraph 构图 ~8ms，节点无低风险优化空间，详见 `docs/context-langgraph-profile.md`
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
