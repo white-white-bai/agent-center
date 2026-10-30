@@ -59,7 +59,7 @@ docker compose up -d --build
 
 说明：
 - 默认栈为 app + MySQL + Redis，启动时自动建表（`AC_AUTO_CREATE_TABLES=true`）。
-- 需要独立 Milvus 服务时：`AC_MILVUS_URI=http://milvus:19530 docker compose --profile milvus up -d`，该 profile 会拉起 etcd + MinIO + Milvus；部分网络环境拉取 MinIO 镜像会被拒绝。
+- 需要独立 Milvus 服务时：`AC_MILVUS_URI=http://milvus:19530 docker compose --profile milvus up -d`，该 profile 会拉起 etcd + MinIO + Milvus；部分网络环境拉取 MinIO 镜像会被拒绝，可参考 [docs/milvus-standalone-report.md](docs/milvus-standalone-report.md) 用 LocalStack S3 本地验证。
 - 常用命令：`docker compose ps`、`docker compose logs -f app`、`docker compose down`（保留数据，`-v` 删除数据卷）。
 - 构建慢时可切换镜像源（示例）：`$env:PIP_INDEX_URL='https://mirrors.aliyun.com/pypi/simple/'; docker compose build`，该值通过构建参数传给容器内 pip。
 - 测试仍在宿主机执行（镜像不包含 tests）：`.venv\Scripts\python -m pytest -q`。

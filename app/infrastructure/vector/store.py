@@ -1,7 +1,11 @@
+import logging
 import math
+import time
 from typing import Protocol
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore(Protocol):
@@ -109,25 +113,39 @@ class MilvusVectorStore:
 
 
 _store: VectorStore | None = None
+_store_fallback = False
+_last_attempt = 0.0
+RETRY_INTERVAL_SECONDS = 30.0
 
 
 def get_vector_store() -> VectorStore:
-    global _store
-    if _store is not None:
-        return _store
+    global _store, _store_fallback, _last_attempt
     settings = get_settings()
+    if _store is not None:
+        if not _store_fallback or not settings.milvus_uri:
+            return _store
+        if time.monotonic() - _last_attempt < RETRY_INTERVAL_SECONDS:
+            return _store
     if settings.milvus_uri:
+        _last_attempt = time.monotonic()
         try:
             _store = MilvusVectorStore(
                 settings.milvus_uri, settings.milvus_collection, settings.embedding_dim
             )
+            _store_fallback = False
             return _store
-        except Exception:  # noqa: BLE001 - Milvus 不可用时降级为内存实现
-            pass
+        except Exception as exc:  # noqa: BLE001 - Milvus 不可用时降级，并定期重试
+            logger.warning("Milvus 不可用，降级内存向量库: %s", exc)
+            _store = InMemoryVectorStore()
+            _store_fallback = True
+            return _store
     _store = InMemoryVectorStore()
+    _store_fallback = False
     return _store
 
 
 def reset_vector_store(store: VectorStore | None = None) -> None:
-    global _store
+    global _store, _store_fallback, _last_attempt
     _store = store
+    _store_fallback = False
+    _last_attempt = 0.0
