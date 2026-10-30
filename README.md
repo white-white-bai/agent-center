@@ -98,7 +98,11 @@ docker compose up -d --build
 | `AC_STUB_REPLY` | 桩回复 JSON | 桩模型返回的决策 JSON |
 | `AC_SENSITIVE_WORDS` | 空 | 敏感词表，逗号分隔 |
 | `AC_MODERATION_URL` | 空 | 外部审核服务地址，不可用时拒绝放行 |
+| `AC_MODERATION_API_KEY` | 空 | 审核服务密钥，以 `Authorization: Bearer` 发送 |
+| `AC_MODERATION_TIMEOUT_MS` | `2000` | 审核请求超时（毫秒） |
 | `AC_MEMORY_EXTRACTION_ENABLED` | `false` | 是否异步抽取记忆 |
+
+审核请求/响应字段可通过 `AC_MODERATION_TEXT_FIELD`、`AC_MODERATION_STAGE_FIELD`、`AC_MODERATION_BLOCKED_FIELD`、`AC_MODERATION_REASON_FIELD`、`AC_MODERATION_CATEGORY_FIELD` 覆盖，默认 `text / stage / blocked / reason / category`。
 
 ## 可观测
 

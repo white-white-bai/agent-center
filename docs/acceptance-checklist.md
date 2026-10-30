@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，302 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，308 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -18,7 +18,7 @@
 | 编号 | 事项 | 现状 | 交付物 | 验收标准 |
 | --- | --- | --- | --- | --- |
 | A1 | 真实模型联调 | 仅桩模型 | 联调报告、样例集、`model_usage_log` 截图 | 50 条真实问题中决策 JSON 解析成功率 ≥ 98%；流式首 token 正常；工具调用与降级模型各验证 10 次 |
-| A2 | 审核服务联调 | 仅本地词表 | 审核客户端、联调记录 | 输入/输出各 20 条用例拦截正确；审核服务不可用时按策略拒绝且返回兜底话术，不输出未审内容 |
+| A2 | 审核服务联调 | **部分通过**：协议/鉴权/字段映射完成，输入输出各 20 条与失败拒绝自动化通过；真实服务待联调，见 `docs/moderation-integration-report.md` | 审核客户端、联调记录 | 输入/输出各 20 条用例拦截正确；审核服务不可用时按策略拒绝且返回兜底话术，不输出未审内容 |
 | A3 | Dify/knowflow 迁移试点 | 仅有通用同步任务 | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
 | A4 | 生产建表与 MySQL 冒烟 | 已导出 DDL，未由 DBA 执行 | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
 | A5 | 前端与 SSE 联调 | 无前端，仅 API | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
@@ -126,10 +126,11 @@ Prometheus 指标与 Span 联动看板已完成：
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 302 passed
+- 自动化测试：`python -m pytest -q` → 308 passed
 - 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
+- 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）

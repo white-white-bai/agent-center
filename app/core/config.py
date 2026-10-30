@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     sensitive_words: str = ""
     moderation_url: str | None = None
     moderation_timeout_ms: int = 2000
+    moderation_api_key: str = ""
+    moderation_auth_header: str = "Authorization"
+    moderation_auth_scheme: str = "Bearer"
+    moderation_text_field: str = "text"
+    moderation_stage_field: str = "stage"
+    moderation_blocked_field: str = "blocked"
+    moderation_reason_field: str = "reason"
+    moderation_category_field: str = "category"
     stub_reply: str = '{"type":"final","answer":"这是桩模型的回复"}'
 
 
