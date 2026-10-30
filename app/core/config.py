@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     app_name: str = "agent-center"
     database_url: str = "sqlite+aiosqlite:///./agent_center.db"
     db_echo: bool = False
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: int = 30
+    db_pool_recycle: int = 1800
     auto_create_tables: bool = True
     model_provider: str = "stub"
     llm_base_url: str = ""

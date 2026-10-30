@@ -22,7 +22,7 @@
 | A3 | Dify/knowflow 迁移试点 | 仅有通用同步任务 | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
 | A4 | 生产建表与 MySQL 冒烟 | 已导出 DDL，未由 DBA 执行 | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
 | A5 | 前端与 SSE 联调 | 无前端，仅 API | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
-| A6 | 性能压测 | 未压测 | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
+| A6 | 性能压测 | **部分通过**：2000/200 桩模型 0% 错误；单节点 TTFT P95 8.48s、E2E P95 12.78s 未达标，见 `docs/load-test-report.md` | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
 | A7 | Redis/Milvus 生产形态 | 本地 Lite + 单实例 | 多实例部署记录 | 2 个 app 副本下会话锁互斥、限流计数共享；独立 Milvus 检索结果与 Lite 一致；重启后数据不丢 |
 | A8 | 安全专项测试 | **自动化通过**：8 类用例全部正确拦截，报告见 `docs/security-test-report.md`；外部渗透测试待做 | 安全测试报告 | 跨租户读取、越权工具、伪造确认、重复写操作、敏感信息入记忆、删除后检索、提示词注入绕过 8 类用例全部不通过（即被正确拦截） |
 
@@ -121,6 +121,7 @@ Prometheus 指标与 Span 联动看板已完成：
 ## 七、当前可用证据
 
 - 自动化测试：`python -m pytest -q` → 294 passed
+- 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）

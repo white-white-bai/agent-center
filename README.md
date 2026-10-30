@@ -88,6 +88,11 @@ docker compose up -d --build
 | `AC_OTEL_ENDPOINT` | 空 | OTLP/HTTP traces 地址，如 `http://collector:4318/v1/traces` |
 | `AC_OTEL_SERVICE_NAME` | `agent-center` | OTel `service.name` |
 | `AC_OTEL_SAMPLE_RATIO` | `1.0` | 采样比例 0–1 |
+| `AC_DB_POOL_SIZE` | `10` | 数据库连接池大小 |
+| `AC_DB_MAX_OVERFLOW` | `20` | 连接池溢出上限 |
+| `AC_DB_POOL_TIMEOUT` | `30` | 获取连接超时（秒） |
+| `AC_DB_POOL_RECYCLE` | `1800` | 连接回收秒数 |
+| `WEB_CONCURRENCY` | `1` | Uvicorn worker 数；多 worker 时关闭自动建表 |
 | `AC_ALERT_WEBHOOK_URL` | 空 | 告警回调地址；为空时只返回告警不推送 |
 | `AC_PUBLISH_REQUIRE_EVAL` | `false` | 开启后提示词发布必须有达标评测 |
 | `AC_STUB_REPLY` | 桩回复 JSON | 桩模型返回的决策 JSON |
@@ -210,7 +215,15 @@ docker cp scripts/e2e_sample.py agent-center-app:/tmp/e2e_sample.py
 docker compose exec -T app python /tmp/e2e_sample.py
 ```
 
-最近一次结果见 [docs/e2e-sample-report.md](docs/e2e-sample-report.md)，安全专项见 [docs/security-test-report.md](docs/security-test-report.md)。
+最近一次结果见 [docs/e2e-sample-report.md](docs/e2e-sample-report.md)，安全专项见 [docs/security-test-report.md](docs/security-test-report.md)，并发压测见 [docs/load-test-report.md](docs/load-test-report.md)。
+
+并发压测（桩模型，测平台自身开销）：
+
+```bash
+python scripts/load_test.py --base-url http://127.0.0.1:8001 --sessions 2000 --concurrency 200
+```
+
+多 worker 部署示例：`WEB_CONCURRENCY=6`，同时设置 `AC_AUTO_CREATE_TABLES=false`；按 `副本数 × (AC_DB_POOL_SIZE + AC_DB_MAX_OVERFLOW) < MySQL max_connections × 0.8` 预留连接。
 
 MCP 工具接入支持 `http`、`sse`、`stdio` 三种传输，导入后可像普通工具一样绑定到 Agent：
 

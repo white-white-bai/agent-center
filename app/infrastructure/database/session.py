@@ -28,8 +28,26 @@ def _apply_tenant_guard(execute_state) -> None:
     )
 
 
-def create_engine(database_url: str, echo: bool = False) -> AsyncEngine:
-    return create_async_engine(database_url, echo=echo, pool_pre_ping=True)
+def create_engine(
+    database_url: str,
+    echo: bool = False,
+    *,
+    pool_size: int = 10,
+    max_overflow: int = 20,
+    pool_timeout: int = 30,
+    pool_recycle: int = 1800,
+) -> AsyncEngine:
+    if database_url.startswith("sqlite"):
+        return create_async_engine(database_url, echo=echo, pool_pre_ping=True)
+    return create_async_engine(
+        database_url,
+        echo=echo,
+        pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+        pool_recycle=pool_recycle,
+    )
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
@@ -37,7 +55,14 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
 
 
 _settings = get_settings()
-engine = create_engine(_settings.database_url, echo=_settings.db_echo)
+engine = create_engine(
+    _settings.database_url,
+    echo=_settings.db_echo,
+    pool_size=_settings.db_pool_size,
+    max_overflow=_settings.db_max_overflow,
+    pool_timeout=_settings.db_pool_timeout,
+    pool_recycle=_settings.db_pool_recycle,
+)
 SessionFactory = create_session_factory(engine)
 
 

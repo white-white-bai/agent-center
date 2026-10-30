@@ -67,6 +67,7 @@ services:
       AC_OTEL_SERVICE_NAME: ${AC_OTEL_SERVICE_NAME:-agent-center}
       AC_OTEL_SAMPLE_RATIO: ${AC_OTEL_SAMPLE_RATIO:-1.0}
       AC_SSE_HEARTBEAT_SECONDS: "15"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       TZ: Asia/Shanghai
     ports:
       - "8000:8000"
