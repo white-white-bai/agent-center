@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，221 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，268 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -52,7 +52,7 @@
 | C3 | 灾备 RPO 24h / RTO 4h | 目标已确认，未落地演练 |
 | C4 | Critic 评审 Agent、独立 PlanExecutor | 设计提及，未实现 |
 | C5 | 主动推荐质量与摘要长度校准 | 已实现模型生成 + 规则兜底，未评测 |
-| C6 | MCP stdio / SSE 传输 | 仅实现 HTTP JSON-RPC |
+| C6 | MCP stdio / SSE 传输 | **已完成**：HTTP/SSE/stdio 三种传输、`/admin/tools/import-mcp` 导入、执行器接线与审计 |
 
 ## 五、试点出口准则
 
@@ -91,11 +91,17 @@ A1 真实模型联调进展：
 - 业务问题端到端抽样（19 组）：路由 100%、引用 100%、关键词 100%、硬错误 0、槽位 2/2；延迟 P50 8.4s / P95 34.6s 未达 ≤8s 目标，详见 `docs/e2e-sample-report.md`
 - 待补：用真实 chatflow 问题集替换人工构造样本，补真实业务工具与引用逐条核验
 
-剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、Critic、MCP 传输、OTel Span）。
+C6 MCP 传输已完成：
+- 新增 `app/integrations/mcp/transports.py`：HTTP（含 SSE 响应）、HTTP+SSE、stdio 子进程三种传输
+- 新增 `POST /api/v1/admin/tools/import-mcp`：列出远端工具、预览、按前缀批量注册，写操作标记与审计
+- MCP 工具已接入 `tool/service._resolve_executor`，调用后自动关闭连接/子进程
+- 新增单测（三种传输）与集成测试（导入、重复跳过、执行、非法配置），测试总数 268
+
+剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、Critic、OTel Span）。
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 260 passed
+- 自动化测试：`python -m pytest -q` → 268 passed
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
 - 建表：容器内 MySQL `agent_center` 共 41 张表（已实测）

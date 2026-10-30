@@ -118,7 +118,7 @@ X-Trace-Id: trace_xxx
 | 反馈 | `POST /api/v1/feedback` |
 | Agent | `GET/POST /api/v1/admin/agents`、`.../{id}/versions`、`.../{id}/publish`、`.../{id}/bindings` |
 | 提示词 | `POST /api/v1/admin/prompts`、`.../{id}/versions`、`.../transition` |
-| 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、凭证管理 |
+| 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、`POST .../import-mcp`、凭证管理 |
 | 知识 | `POST /api/v1/admin/knowledge-spaces`、`.../documents`、`.../publish`、`POST /api/v1/knowledge/search` |
 | 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks` |
 | 知识版本 | `POST /api/v1/admin/knowledge-documents/{id}/versions`、`.../unpublish` |
@@ -150,6 +150,17 @@ docker compose exec -T app python /tmp/e2e_sample.py
 ```
 
 最近一次结果见 [docs/e2e-sample-report.md](docs/e2e-sample-report.md)。
+
+MCP 工具接入支持 `http`、`sse`、`stdio` 三种传输，导入后可像普通工具一样绑定到 Agent：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/admin/tools/import-mcp \
+  -H "X-Tenant-Id: t1" -H "X-User-Id: u1" -H "X-Roles: admin" \
+  -H "Content-Type: application/json" \
+  -d '{"transport":"stdio","command":["npx","-y","@modelcontextprotocol/server-filesystem","."],"tool_prefix":"fs.","auto_register":true}'
+```
+
+SSE 传输传 `{"transport":"sse","url":"https://mcp.example.com/sse"}`；HTTP 传输传 `{"transport":"http","url":"https://mcp.example.com/mcp"}`。stdio 会以子进程运行 command，仅管理员可调用，且每次工具调用独立启停进程。
 
 更完整的真实模型验证（50 条决策样本、流式、备用模型）：
 

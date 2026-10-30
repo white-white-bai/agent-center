@@ -30,6 +30,19 @@ async def _load_idempotency_record(
 async def _resolve_executor(
     session: AsyncSession, ctx: TenantContext, tool: ToolDefinition, default: ToolExecutor
 ) -> ToolExecutor:
+    if tool.source_type == "MCP":
+        from app.integrations.mcp.client import MCPClient, MCPError, MCPToolExecutor
+
+        config = dict(tool.auth_policy_json or {})
+        config.setdefault("transport", "http")
+        if not config.get("url") and tool.endpoint:
+            config["url"] = tool.endpoint
+        try:
+            client = MCPClient.from_config(config, timeout=tool.timeout_ms / 1000)
+        except MCPError as exc:
+            raise ValidationError(f"MCP 工具配置无效: {exc}") from exc
+        return MCPToolExecutor(client)
+
     if tool.source_type in {"HTTP", "OPENAPI"} and tool.endpoint:
         from app.integrations.http_tool import HTTPToolExecutor
         from app.domain.tool.credentials import reveal_credential
@@ -171,7 +184,17 @@ async def invoke_tool(
             return ToolResult(status="SUCCESS", output=completed.response_json or {}, cached=True)
         tool_context = replace(tool_context, idempotency_key=key)
 
-    result = await executor.execute(tool_code=tool_code, arguments=arguments, context=tool_context)
+    try:
+        result = await executor.execute(
+            tool_code=tool_code, arguments=arguments, context=tool_context
+        )
+    finally:
+        closer = getattr(executor, "aclose", None)
+        if closer is not None:
+            try:
+                await closer()
+            except Exception:  # noqa: BLE001 - 关闭失败不影响本次调用结果
+                pass
     await resilience.record(limiter_key, success=result.ok)
 
     from app.core.redaction import redact

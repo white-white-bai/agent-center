@@ -60,3 +60,9 @@ class ModelUnavailableError(AppError):
     status_code = 503
     code = "AC.LLM.UNAVAILABLE"
     message = "模型服务暂不可用"
+
+
+class MCPUnavailableError(AppError):
+    status_code = 502
+    code = "AC.MCP.UNAVAILABLE"
+    message = "MCP 服务不可用"

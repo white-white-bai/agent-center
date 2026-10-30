@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentTenant, DbSession
+from app.core.exceptions import MCPUnavailableError, ValidationError
 from app.core.responses import ok
 from app.core.tenant import require_admin
 from app.domain.tool import service
@@ -38,6 +39,120 @@ class ImportOpenApiRequest(BaseModel):
     spec: dict = Field(default_factory=dict)
     base_url: str | None = Field(default=None, max_length=500)
     auto_register: bool = False
+
+
+class ImportMCPRequest(BaseModel):
+    transport: str = Field(default="http", max_length=20)
+    url: str | None = Field(default=None, max_length=500)
+    command: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    tool_prefix: str | None = Field(default=None, max_length=50)
+    write_operation: bool = False
+    auto_register: bool = False
+    timeout_ms: int = Field(default=10000, ge=1000, le=60000)
+
+
+def _mcp_config(payload: ImportMCPRequest) -> dict:
+    transport = payload.transport.lower()
+    if transport not in {"http", "sse", "stdio"}:
+        raise ValidationError("MCP transport 仅支持 http、sse、stdio")
+    if transport in {"http", "sse"} and not payload.url:
+        raise ValidationError("HTTP/SSE 传输必须提供 url")
+    if transport == "stdio" and not payload.command:
+        raise ValidationError("stdio 传输必须提供 command")
+    config: dict = {"transport": transport}
+    if payload.url:
+        config["url"] = payload.url
+    if payload.command:
+        config["command"] = payload.command
+    if payload.env:
+        config["env"] = payload.env
+    if payload.headers:
+        config["headers"] = payload.headers
+    return config
+
+
+@router.post("/import-mcp")
+async def import_mcp(payload: ImportMCPRequest, session: DbSession, ctx: CurrentTenant) -> dict:
+    import asyncio
+
+    from app.integrations.mcp.client import MCPClient, MCPError
+
+    config = _mcp_config(payload)
+    prefix = (payload.tool_prefix or "").strip()
+    client = MCPClient.from_config(config, timeout=payload.timeout_ms / 1000)
+    try:
+        remote_tools = await client.list_tools()
+    except (MCPError, OSError, asyncio.TimeoutError) as exc:
+        raise MCPUnavailableError(f"MCP 工具列表获取失败: {exc}") from exc
+    finally:
+        await client.close()
+
+    preview = []
+    for remote in remote_tools:
+        name = str(remote.get("name") or "").strip()
+        if not name:
+            continue
+        tool_code = f"{prefix}{name}"
+        annotations = remote.get("annotations") or {}
+        write_operation = payload.write_operation or annotations.get("readOnlyHint") is False
+        preview.append(
+            {
+                "toolCode": tool_code,
+                "name": remote.get("title") or name,
+                "description": remote.get("description"),
+                "inputSchema": remote.get("inputSchema") or remote.get("input_schema") or {},
+                "writeOperation": write_operation,
+            }
+        )
+
+    created: list[str] = []
+    skipped: list[str] = []
+    if payload.auto_register:
+        for item in preview:
+            if len(item["toolCode"]) > 100:
+                raise ValidationError(f"MCP 工具编码过长: {item['toolCode']}")
+            existing = await service.find_tool(session, ctx, item["toolCode"])
+            if existing is not None:
+                skipped.append(item["toolCode"])
+                continue
+            await service.create_tool(
+                session,
+                ctx,
+                tool_code=item["toolCode"],
+                name=item["name"],
+                description=item["description"],
+                source_type="MCP",
+                input_schema=item["inputSchema"],
+                write_operation=item["writeOperation"],
+                endpoint=payload.url,
+                auth_policy=config,
+            )
+            created.append(item["toolCode"])
+
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="tool.import_mcp",
+        resource_type="tool",
+        detail={
+            "transport": config["transport"],
+            "total": len(preview),
+            "created": created,
+            "skipped": skipped,
+        },
+    )
+    return ok(
+        {
+            "total": len(preview),
+            "created": created,
+            "skipped": skipped,
+            "preview": preview,
+        }
+    )
 
 
 @router.post("/import-openapi")
