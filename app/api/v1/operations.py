@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.api.deps import AdminContext, CurrentTenant, DbSession, ModelRouterDep
+from app.core import metrics as app_metrics
 from app.core.responses import ok
 from app.domain.session import run_service, service
 
@@ -76,44 +77,52 @@ async def stream_session_events(
         nonlocal after_id
         started = time.monotonic()
         last_beat = started
-        yield event_service.format_sse(
-            {"id": "session:ready", "event": "stream.ready", "data": {"sessionId": session_id}}
-        )
-        while True:
-            if timeout is not None and time.monotonic() - started >= timeout:
-                yield event_service.format_sse(
-                    {"id": "session:end", "event": "stream.end", "data": {"reason": "timeout"}}
-                )
-                return
-            rows = await session.execute(
-                sa_select(RunEvent)
-                .join(Run, Run.id == RunEvent.run_id)
-                .where(
-                    RunEvent.tenant_id == ctx.tenant_id,
-                    Run.conversation_id == session_id,
-                    RunEvent.id > after_id,
-                )
-                .order_by(RunEvent.id.asc())
-                .limit(200)
+        disconnected = False
+        app_metrics.sse_opened("session")
+        try:
+            yield event_service.format_sse(
+                {"id": "session:ready", "event": "stream.ready", "data": {"sessionId": session_id}}
             )
-            rows = list(rows.scalars().all())
-            event_ids = [event.id for event in rows]
-            serialized = [event_service.serialize_event(event) for event in rows]
-            await session.rollback()
-            for event_id, event in zip(event_ids, serialized):
-                after_id = event_id
-                yield event_service.format_sse(event)
-            now = time.monotonic()
-            if heartbeat > 0 and now - last_beat >= heartbeat:
-                yield event_service.format_sse(
-                    {
-                        "id": f"session:heartbeat:{int(now * 1000)}",
-                        "event": "heartbeat",
-                        "data": {"ts": datetime.utcnow().isoformat()},
-                    }
+            while True:
+                if timeout is not None and time.monotonic() - started >= timeout:
+                    yield event_service.format_sse(
+                        {"id": "session:end", "event": "stream.end", "data": {"reason": "timeout"}}
+                    )
+                    return
+                rows = await session.execute(
+                    sa_select(RunEvent)
+                    .join(Run, Run.id == RunEvent.run_id)
+                    .where(
+                        RunEvent.tenant_id == ctx.tenant_id,
+                        Run.conversation_id == session_id,
+                        RunEvent.id > after_id,
+                    )
+                    .order_by(RunEvent.id.asc())
+                    .limit(200)
                 )
-                last_beat = now
-            await asyncio.sleep(poll)
+                rows = list(rows.scalars().all())
+                event_ids = [event.id for event in rows]
+                serialized = [event_service.serialize_event(event) for event in rows]
+                await session.rollback()
+                for event_id, event in zip(event_ids, serialized):
+                    after_id = event_id
+                    yield event_service.format_sse(event)
+                now = time.monotonic()
+                if heartbeat > 0 and now - last_beat >= heartbeat:
+                    yield event_service.format_sse(
+                        {
+                            "id": f"session:heartbeat:{int(now * 1000)}",
+                            "event": "heartbeat",
+                            "data": {"ts": datetime.utcnow().isoformat()},
+                        }
+                    )
+                    last_beat = now
+                await asyncio.sleep(poll)
+        except (asyncio.CancelledError, GeneratorExit):
+            disconnected = True
+            raise
+        finally:
+            app_metrics.sse_closed("session", disconnected=disconnected)
 
     return StreamingResponse(
         _generate(),

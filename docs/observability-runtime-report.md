@@ -19,6 +19,7 @@
 - 本地访问：
   - Grafana `http://localhost:3000`（admin/admin）
   - Prometheus `http://localhost:9090`
+  - Alertmanager `http://localhost:9093`
   - Tempo `http://localhost:3200`
 
 ## 二、修复的问题
@@ -67,4 +68,4 @@ curl -u admin:admin http://127.0.0.1:3000/api/dashboards/uid/agent-center-overvi
 - 本地为单实例 Collector/存储，未验证生产高可用、容量与保留策略。
 - Grafana 默认口令仅用于本地，生产需接 SSO/密钥管理。
 - Tempo 使用本地文件存储；生产建议对象存储 + 保留策略。
-- 告警规则与通知渠道仍需按生产阈值配置并演练。
+- 告警规则与 Alertmanager 已接入并完成一次 firing 演练，见 `docs/alerting-report.md`；生产通知渠道（企微/钉钉/邮件/值班）仍需配置。

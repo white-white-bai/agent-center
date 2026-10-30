@@ -1,0 +1,120 @@
+groups:
+  - name: agent-center
+    rules:
+      - alert: AgentCenterDown
+        expr: up{job="agent-center"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: agent-center
+        annotations:
+          summary: "Agent Center 实例不可达"
+          description: "Prometheus 连续 1 分钟无法抓取 {{ $labels.instance }}。"
+
+      - alert: AgentCenterHttp5xxHigh
+        expr: |
+          sum(rate(agent_center_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(agent_center_http_requests_total[5m])), 0.001)
+          > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          service: agent-center
+        annotations:
+          summary: "HTTP 5xx 比例超过 1%"
+          description: "过去 5 分钟 5xx 比例持续高于 1%。"
+
+      - alert: AgentCenterRunFailureHigh
+        expr: |
+          sum(rate(agent_center_runs_total{status=~"FAILED|ERROR|CANCELLED|TIMEOUT"}[5m]))
+          /
+          clamp_min(sum(rate(agent_center_runs_total[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: agent-center
+        annotations:
+          summary: "Run 失败率超过 5%"
+          description: "过去 5 分钟 Run 失败率持续高于 5%。"
+
+      - alert: AgentCenterToolFailureHigh
+        expr: |
+          sum(rate(agent_center_tool_calls_total{status!="SUCCESS"}[5m]))
+          /
+          clamp_min(sum(rate(agent_center_tool_calls_total[5m])), 0.001)
+          > 0.10
+        for: 5m
+        labels:
+          severity: warning
+          service: agent-center
+        annotations:
+          summary: "工具失败率超过 10%"
+          description: "过去 5 分钟工具调用失败率持续高于 10%。"
+
+      - alert: AgentCenterModelFailureHigh
+        expr: |
+          sum(rate(agent_center_model_duration_seconds_count{status!="SUCCESS"}[5m]))
+          /
+          clamp_min(sum(rate(agent_center_model_duration_seconds_count[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: agent-center
+        annotations:
+          summary: "模型调用失败率超过 5%"
+          description: "过去 5 分钟模型调用失败率持续高于 5%。"
+
+      - alert: AgentCenterFirstTokenP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(agent_center_first_token_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: agent-center
+        annotations:
+          summary: "首 token P95 超过 2s"
+          description: "过去 5 分钟首 token P95 高于 2s。"
+
+      - alert: AgentCenterRunP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(agent_center_run_duration_seconds_bucket[5m]))
+          ) > 8
+        for: 5m
+        labels:
+          severity: warning
+          service: agent-center
+        annotations:
+          summary: "端到端 P95 超过 8s"
+          description: "过去 5 分钟 Run 时长 P95 高于 8s。"
+
+      - alert: AgentCenterSseDisconnectRateHigh
+        expr: |
+          sum(rate(agent_center_sse_connections_total{result="disconnected"}[5m]))
+          /
+          clamp_min(sum(rate(agent_center_sse_connections_total[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: agent-center
+        annotations:
+          summary: "SSE 断连率超过 5%"
+          description: "过去 5 分钟会话级 SSE 异常断开比例持续高于 5%。"
+
+      - alert: AgentCenterNoTraffic
+        expr: sum(rate(agent_center_http_requests_total[5m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+          service: agent-center
+        annotations:
+          summary: "Agent Center 15 分钟无流量"
+          description: "请确认上游网关/负载均衡或业务是否停止。"

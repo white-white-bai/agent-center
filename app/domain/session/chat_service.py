@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.exceptions import ConflictError
 from app.core.tenant import TenantContext
 from app.core.tracing import get_trace_id
@@ -116,12 +117,15 @@ async def stream_message(
     from app.runtime.resilience import distributed_lock
 
     conversation: Conversation = kwargs["conversation"]
+    first_token_started = time.perf_counter()
     # 结束路由阶段的读事务：否则在 MySQL REPEATABLE READ 下，等锁期间其他实例
     # 已提交的 turn/会话状态不可见，会在拿到锁后仍写入旧快照。
     await session.commit()
     async with distributed_lock(conversation_lock_key(ctx.tenant_id, conversation.id)):
         await session.refresh(conversation)
-        async for chunk in _stream_message_locked(session, ctx, **kwargs):
+        async for chunk in _stream_message_locked(
+            session, ctx, first_token_started=first_token_started, **kwargs
+        ):
             yield chunk
 
 
@@ -137,9 +141,12 @@ async def _stream_message_locked(
     router,
     tool_executor,
     duplicate: Message | None = None,
+    first_token_started: float | None = None,
 ) -> AsyncIterator[str]:
+    started_at = first_token_started or time.perf_counter()
     if duplicate is not None:
         stream = _EventStream("duplicate")
+        metrics.observe_first_token(time.perf_counter() - started_at, get_trace_id())
         yield stream.format("message.delta", {"runId": None, "seq": 1, "content": duplicate.content})
         yield stream.format("message.end", {"runId": None, "finishReason": "duplicate"})
         return
@@ -150,6 +157,7 @@ async def _stream_message_locked(
     input_check = await safety.check(text, "input")
     if not input_check.allowed:
         stream = _EventStream("blocked")
+        metrics.observe_first_token(time.perf_counter() - started_at, get_trace_id())
         yield stream.format(
             "error",
             {"runId": None, "code": "AC.SAFETY.BLOCKED", "message": input_check.reason},
@@ -302,7 +310,7 @@ async def _stream_message_locked(
         output_check = await safety.check(result.answer, "output")
         if not output_check.allowed:
             result.answer = REFUSAL_MESSAGE
-        async for chunk in _answer_events(stream, result.answer, emit):
+        async for chunk in _answer_events(stream, result.answer, emit, started_at):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
         try:
@@ -365,7 +373,7 @@ async def _stream_message_locked(
             },
         )
     elif result.status == "WAITING_USER":
-        async for chunk in _answer_events(stream, result.question, emit):
+        async for chunk in _answer_events(stream, result.question, emit, started_at):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.question)
         turn.status = "AWAITING_CLARIFICATION"
@@ -375,7 +383,7 @@ async def _stream_message_locked(
             {"runId": run_id, "finishReason": "waiting_user", "messageId": str(assistant_message.id)},
         )
     elif result.status == "HANDOFF":
-        async for chunk in _answer_events(stream, result.answer, emit):
+        async for chunk in _answer_events(stream, result.answer, emit, started_at):
             yield chunk
         assistant_message = await _save_assistant(session, ctx, conversation, turn, result.answer)
         turn.status = "ANSWERED"
@@ -385,7 +393,7 @@ async def _stream_message_locked(
             {"runId": run_id, "finishReason": "handoff", "messageId": str(assistant_message.id)},
         )
     elif result.status == "WAITING_CONFIRM":
-        async for chunk in _answer_events(stream, result.confirmation_summary, emit):
+        async for chunk in _answer_events(stream, result.confirmation_summary, emit, started_at):
             yield chunk
         assistant_message = await _save_assistant(
             session, ctx, conversation, turn, result.confirmation_summary
@@ -445,7 +453,9 @@ async def _answer_events(
     stream: _EventStream,
     answer: str,
     emit,
+    started_at: float,
 ) -> AsyncIterator[str]:
+    metrics.observe_first_token(time.perf_counter() - started_at, get_trace_id())
     for index in range(0, len(answer), ANSWER_CHUNK_SIZE):
         yield await emit(
             "message.delta",

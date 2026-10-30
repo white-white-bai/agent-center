@@ -24,6 +24,11 @@ RUN_DURATION = Histogram(
     ["status"],
     buckets=(0.1, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300),
 )
+FIRST_TOKEN_DURATION = Histogram(
+    "agent_center_first_token_duration_seconds",
+    "Time from request start to first SSE message delta",
+    buckets=(0.1, 0.25, 0.5, 1, 2, 3, 5, 8, 10, 20, 30, 60),
+)
 RUNS_IN_PROGRESS = Gauge(
     "agent_center_runs_in_progress",
     "Agent runs currently executing",
@@ -51,6 +56,16 @@ TOOL_DURATION = Histogram(
     "Tool call duration in seconds",
     ["tool"],
     buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),
+)
+SSE_CONNECTIONS = Counter(
+    "agent_center_sse_connections_total",
+    "SSE connections by stream and end result",
+    ["stream", "result"],
+)
+SSE_ACTIVE = Gauge(
+    "agent_center_sse_connections_active",
+    "Currently open SSE connections",
+    ["stream"],
 )
 
 
@@ -89,6 +104,13 @@ def observe_run(status: str, duration_seconds: float, trace_id: str | None = Non
         pass
 
 
+def observe_first_token(duration_seconds: float, trace_id: str | None = None) -> None:
+    try:
+        FIRST_TOKEN_DURATION.observe(duration_seconds, exemplar=_exemplar(trace_id))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def observe_model(
     model: str,
     status: str,
@@ -106,6 +128,17 @@ def observe_model(
         )
     except Exception:  # noqa: BLE001
         pass
+
+
+def sse_opened(stream: str) -> None:
+    SSE_ACTIVE.labels(stream=stream).inc()
+
+
+def sse_closed(stream: str, *, disconnected: bool) -> None:
+    SSE_ACTIVE.labels(stream=stream).dec()
+    SSE_CONNECTIONS.labels(
+        stream=stream, result="disconnected" if disconnected else "closed"
+    ).inc()
 
 
 def observe_tool(

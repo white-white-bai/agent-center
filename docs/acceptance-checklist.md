@@ -11,7 +11,7 @@
 | 后端主线（M0–M4） | 部分通过 | 功能完整度约 80%，可支撑单场景试点 |
 | 生产上线 | 未通过 | 模型、审核、迁移、压测、前端联调、生产存储形态均未验证 |
 | 安全与合规 | 部分通过 | 8 类自动化安全专项全部拦截；外部审核联调与第三方渗透测试待做 |
-| 可观测与运维 | 部分通过 | **本地观测栈联动通过**：Prometheus target up、Exemplar→Tempo Trace、Grafana 看板 10 面板；生产高可用与告警演练待做 |
+| 可观测与运维 | 部分通过 | **本地观测/告警联动通过**：Prometheus target up、Exemplar→Tempo Trace、Grafana 10 面板、9 条告警规则与 Alertmanager 触发演练；生产高可用与通知渠道待做 |
 
 ## 二、P0：试点前必须完成
 
@@ -35,7 +35,7 @@
 | B3 | OpenAPI 导入接口 | 仅解析函数 | 上传 spec 后可预览并批量注册工具，重复编码返回冲突 |
 | B4 | 凭证自动取用 | 已加密存储，执行器未取用 | HTTP 工具按名称自动注入凭证；日志与响应不出现明文 |
 | B5 | 会话查询接口 | 仅按 ID 查询 | 管理端可按租户/用户/状态/时间分页查询，强制租户隔离 |
-| B6 | 可观测与告警 | 仅指标汇总 | `/metrics` 暴露核心指标；关键告警（错误率、首 token P95、工具失败率、SSE 断连率）可推送 |
+| B6 | 可观测与告警 | **本地完成**：业务告警 `/admin/alerts/check` + Webhook；Prometheus 9 条规则 + Alertmanager；首 token/SSE 断连指标已补，`AgentCenterDown` 实测 firing，见 `docs/alerting-report.md`；生产通知渠道待接 | `/metrics` 暴露核心指标；关键告警（错误率、首 token P95、工具失败率、SSE 断连率）可推送 |
 | B7 | 评测完善 | 仅答案相似度 | 新增引用准确率指标；导入 chatflow 基线问题集；提示词/Agent 发布前强制跑评测 |
 | B8 | 审计全覆盖 | 覆盖部分管理动作 | 所有管理写操作（含回滚、凭证变更）有审计；支持按动作/资源/时间导出 |
 | B9 | SSE 直接续流 | 通过重放接口补发 | 携带 `Last-Event-ID` 直接续流，事件连续且无重复 |
@@ -73,7 +73,7 @@ P1 全部完成：
 - B3 OpenAPI 导入：预览与自动注册，重复编码跳过
 - B4 凭证自动取用：按 `credential_map` 解密注入请求头
 - B5 会话查询：`GET /admin/sessions`，筛选与分页
-- B6 指标与告警：`/admin/metrics/prometheus`、`/admin/alerts/check`、Webhook 推送
+- B6 指标与告警：`/admin/metrics/prometheus`、`/admin/alerts/check`、Webhook 推送；Prometheus 9 条规则 + Alertmanager，`AgentCenterDown` 实测 firing；首 token 与 SSE 断连指标已补
 - B7 评测与门禁：引用准确率指标、`AC_PUBLISH_REQUIRE_EVAL` 发布门禁
 - B8 审计：全部管理写操作留痕
 - B9 SSE 续流：`.../runs/{runId}/stream?lastEventId=`
@@ -132,6 +132,7 @@ Prometheus 指标与 Span 联动看板已完成：
 - 真实模型双节点：40/20 零错误、40 次真实调用全成功，TTFT P95 6.22s、E2E P95 6.25s，详见 `docs/real-model-multinode-report.md`
 - SSE 断线续流：断开于 seq 2，续流从 seq 3 开始，3 条事件无缺失/重复；网关下游重启后重连成功，详见 `docs/a5-sse-reconnect-report.md`
 - 上下文/LangGraph 剖析：检索早退后上下文装配 ~11ms、LangGraph 构图 ~8ms，节点无低风险优化空间，详见 `docs/context-langgraph-profile.md`
+- 告警：9 条 Prometheus 规则全部 health=ok；停 app 后 `AgentCenterDown` firing 并进入 Alertmanager；SSE 断连指标已实测，详见 `docs/alerting-report.md`
 - 灾备：加密备份恢复 38.76s、41 表；7 天保留与 cron/计划任务模板；错误密钥拒绝，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
