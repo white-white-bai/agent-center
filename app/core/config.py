@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     memory_extraction_enabled: bool = False
     sse_heartbeat_seconds: float = 15.0
     trace_retention_days: int = 90
+    otel_enabled: bool = False
+    otel_endpoint: str = ""
+    otel_service_name: str = "agent-center"
+    otel_sample_ratio: float = 1.0
+    otel_timeout_ms: int = 5000
     alert_webhook_url: str = ""
     alert_tool_success_rate_min: float = 0.9
     alert_run_failure_rate_max: float = 0.2

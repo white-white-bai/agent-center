@@ -3,7 +3,10 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core import telemetry
 from app.core.exceptions import AppError
 from app.core.responses import fail
 from app.core.tenant import reset_current_tenant, set_current_tenant
@@ -35,15 +38,50 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
 
 
-def install_trace_middleware(app: FastAPI) -> None:
-    @app.middleware("http")
-    async def trace_middleware(request: Request, call_next):
-        incoming = request.headers.get("X-Trace-Id") or new_trace_id()
+class TraceMiddleware:
+    """纯 ASGI 中间件，Span 覆盖到流式响应结束。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = Headers(scope=scope)
+        incoming = headers.get("x-trace-id") or new_trace_id()
         set_trace_id(incoming)
-        tenant_token = set_current_tenant(request.headers.get("X-Tenant-Id"))
-        try:
-            response = await call_next(request)
-        finally:
-            reset_current_tenant(tenant_token)
-        response.headers["X-Trace-Id"] = incoming
-        return response
+        tenant_token = set_current_tenant(headers.get("x-tenant-id"))
+        status_code = 500
+        attributes = {
+            "http.request.method": scope.get("method"),
+            "url.path": scope.get("path"),
+            "url.scheme": scope.get("scheme"),
+            "server.address": scope.get("server", (None, None))[0],
+            "ac.trace_id": incoming,
+            "ac.tenant_id": headers.get("x-tenant-id"),
+        }
+
+        with telemetry.span("http.request", attributes) as current:
+            async def send_wrapper(message: Message) -> None:
+                nonlocal status_code
+                if message["type"] == "http.response.start":
+                    status_code = int(message["status"])
+                    MutableHeaders(scope=message)["X-Trace-Id"] = incoming
+                await send(message)
+
+            try:
+                await self.app(scope, receive, send_wrapper)
+            except Exception as exc:  # noqa: BLE001 - 记录后继续抛出
+                telemetry.mark_error(current, "AC.UNHANDLED", type(exc).__name__)
+                raise
+            finally:
+                current.set_attribute("http.response.status_code", status_code)
+                if status_code >= 500:
+                    telemetry.mark_error(current, "HTTP_5XX", str(status_code))
+                reset_current_tenant(tenant_token)
+
+
+def install_trace_middleware(app: FastAPI) -> None:
+    app.add_middleware(TraceMiddleware)

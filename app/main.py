@@ -25,12 +25,18 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if get_settings().auto_create_tables:
-        from app.infrastructure.database.registry import create_all
-        from app.infrastructure.database.session import engine
+    from app.core.telemetry import configure_telemetry, shutdown_telemetry
 
-        await create_all(engine)
-    yield
+    configure_telemetry()
+    try:
+        if get_settings().auto_create_tables:
+            from app.infrastructure.database.registry import create_all
+            from app.infrastructure.database.session import engine
+
+            await create_all(engine)
+        yield
+    finally:
+        shutdown_telemetry()
 
 
 app = FastAPI(title="Agent Center", version="0.1.0", lifespan=lifespan)

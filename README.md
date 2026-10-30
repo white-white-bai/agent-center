@@ -84,12 +84,31 @@ docker compose up -d --build
 | `AC_CREDENTIAL_KEY` | 空 | 工具凭证加密密钥；生产必须配置 |
 | `AC_SSE_HEARTBEAT_SECONDS` | `15` | SSE 心跳间隔 |
 | `AC_TRACE_RETENTION_DAYS` | `90` | 轨迹保留天数 |
+| `AC_OTEL_ENABLED` | `false` | 开启 OpenTelemetry Span 埋点 |
+| `AC_OTEL_ENDPOINT` | 空 | OTLP/HTTP traces 地址，如 `http://collector:4318/v1/traces` |
+| `AC_OTEL_SERVICE_NAME` | `agent-center` | OTel `service.name` |
+| `AC_OTEL_SAMPLE_RATIO` | `1.0` | 采样比例 0–1 |
 | `AC_ALERT_WEBHOOK_URL` | 空 | 告警回调地址；为空时只返回告警不推送 |
 | `AC_PUBLISH_REQUIRE_EVAL` | `false` | 开启后提示词发布必须有达标评测 |
 | `AC_STUB_REPLY` | 桩回复 JSON | 桩模型返回的决策 JSON |
 | `AC_SENSITIVE_WORDS` | 空 | 敏感词表，逗号分隔 |
 | `AC_MODERATION_URL` | 空 | 外部审核服务地址，不可用时拒绝放行 |
 | `AC_MEMORY_EXTRACTION_ENABLED` | `false` | 是否异步抽取记忆 |
+
+## 可观测
+
+开启 OTel 后自动产生四层 Span，可直接接 Jaeger、Tempo 或 Grafana：
+
+```bash
+AC_OTEL_ENABLED=true
+AC_OTEL_ENDPOINT=http://127.0.0.1:4318/v1/traces   # OTLP/HTTP
+AC_OTEL_SAMPLE_RATIO=1.0
+```
+
+- `http.request` → `agent.run` → `model.complete` / `tool.execute`，流式响应结束后 HTTP Span 才关闭
+- 关键属性：`ac.run_id`、`ac.tenant_id`、`ac.agent_code`、`gen_ai.request.model`、`gen_ai.usage.*`、`http.response.status_code`、`error.code`
+- 未配置 endpoint 时不导出；采集器不可用只影响导出，不影响业务
+- 采样比例通过 `AC_OTEL_SAMPLE_RATIO` 控制，生产建议 0.01–0.1
 
 ## 身份与租户
 

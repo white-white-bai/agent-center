@@ -10,6 +10,11 @@ httpx==0.28.1
 langgraph==1.2.18
 cryptography==50.0.2
 
+# 可观测：OpenTelemetry（OTLP/HTTP 导出，可开关）
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.1
+
 # 可选：生产集成（MySQL / Redis / Milvus）
 aiomysql==0.3.2
 PyMySQL==1.2.3

@@ -5,6 +5,7 @@ import jsonschema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import telemetry
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.tenant import TenantContext
 from app.domain.tool import idempotency
@@ -184,17 +185,34 @@ async def invoke_tool(
             return ToolResult(status="SUCCESS", output=completed.response_json or {}, cached=True)
         tool_context = replace(tool_context, idempotency_key=key)
 
-    try:
-        result = await executor.execute(
-            tool_code=tool_code, arguments=arguments, context=tool_context
-        )
-    finally:
-        closer = getattr(executor, "aclose", None)
-        if closer is not None:
-            try:
-                await closer()
-            except Exception:  # noqa: BLE001 - 关闭失败不影响本次调用结果
-                pass
+    attributes = {
+        "ac.tool.code": tool_code,
+        "ac.tool.source": tool.source_type,
+        "ac.tool.write": tool.write_operation,
+        "ac.run_id": tool_context.run_id,
+        "ac.tenant_id": ctx.tenant_id,
+    }
+    with telemetry.span("tool.execute", attributes) as current:
+        try:
+            result = await executor.execute(
+                tool_code=tool_code, arguments=arguments, context=tool_context
+            )
+        except Exception as exc:  # noqa: BLE001 - 记录后继续抛出
+            telemetry.mark_error(current, "AC.TOOL.EXCEPTION", type(exc).__name__)
+            raise
+        finally:
+            closer = getattr(executor, "aclose", None)
+            if closer is not None:
+                try:
+                    await closer()
+                except Exception:  # noqa: BLE001 - 关闭失败不影响本次调用结果
+                    pass
+        current.set_attribute("ac.tool.status", result.status)
+        current.set_attribute("ac.tool.duration_ms", result.duration_ms)
+        if not result.ok:
+            telemetry.mark_error(
+                current, result.error_code or "AC.TOOL.FAILED", result.error_message
+            )
     await resilience.record(limiter_key, success=result.ok)
 
     from app.core.redaction import redact

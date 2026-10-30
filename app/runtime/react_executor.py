@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import telemetry
 from app.core.exceptions import AppError
 from app.core.tenant import TenantContext
 from app.domain.session.slots import (
@@ -126,6 +127,30 @@ class ReActExecutor:
             await self.on_event(event)
 
     async def run(self, ctx: TenantContext, run_ctx: RunContext) -> RuntimeResult:
+        attributes = {
+            "ac.run_id": run_ctx.run_id,
+            "ac.tenant_id": run_ctx.tenant_id,
+            "ac.user_id": run_ctx.user_id,
+            "ac.conversation_id": run_ctx.conversation_id,
+            "ac.agent_code": run_ctx.agent_code,
+            "ac.trace_id": run_ctx.trace_id,
+        }
+        with telemetry.span("agent.run", attributes) as current:
+            try:
+                result = await self._run_inner(ctx, run_ctx)
+            except Exception as exc:  # noqa: BLE001 - 记录后继续抛出
+                telemetry.mark_error(current, "AC.RUN.EXCEPTION", type(exc).__name__)
+                raise
+            current.set_attribute("ac.run.status", result.status)
+            current.set_attribute("ac.run.steps", result.steps)
+            current.set_attribute("ac.run.tool_calls", result.tool_calls)
+            current.set_attribute("gen_ai.usage.input_tokens", result.token_input)
+            current.set_attribute("gen_ai.usage.output_tokens", result.token_output)
+            if result.error_code:
+                telemetry.mark_error(current, result.error_code)
+            return result
+
+    async def _run_inner(self, ctx: TenantContext, run_ctx: RunContext) -> RuntimeResult:
         from app.domain.session.models import Run
 
         self._started = time.monotonic()
