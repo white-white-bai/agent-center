@@ -255,6 +255,15 @@ python scripts/dr_restore.py --backup backups/mysql_<ts>.sql \
 
 最近一次演练见 [docs/dr-drill-report.md](docs/dr-drill-report.md)。
 
+多实例一致性检查（需先启动两个共享 MySQL/Redis 的 app 副本与带延迟的模拟审核）：
+
+```bash
+python scripts/mock_moderation.py --port 8090 --delay 3
+python scripts/multi_instance_check.py --base-a http://127.0.0.1:8010 --base-b http://127.0.0.1:8011
+```
+
+最近一次结果见 [docs/multi-instance-check-report.md](docs/multi-instance-check-report.md)。
+
 MCP 工具接入支持 `http`、`sse`、`stdio` 三种传输，导入后可像普通工具一样绑定到 Agent：
 
 ```bash

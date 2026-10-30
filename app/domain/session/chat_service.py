@@ -116,7 +116,11 @@ async def stream_message(
     from app.runtime.resilience import distributed_lock
 
     conversation: Conversation = kwargs["conversation"]
+    # 结束路由阶段的读事务：否则在 MySQL REPEATABLE READ 下，等锁期间其他实例
+    # 已提交的 turn/会话状态不可见，会在拿到锁后仍写入旧快照。
+    await session.commit()
     async with distributed_lock(conversation_lock_key(ctx.tenant_id, conversation.id)):
+        await session.refresh(conversation)
         async for chunk in _stream_message_locked(session, ctx, **kwargs):
             yield chunk
 
