@@ -1,0 +1,65 @@
+[
+  {
+    "id": "license",
+    "tags": ["所在区域：天宁区"],
+    "matters": [{ "matter": "营业执照", "status": "受理中" }],
+    "expected_keywords": ["营业执照"]
+  },
+  {
+    "id": "social",
+    "tags": ["所在区域：天宁区"],
+    "matters": [{ "matter": "社保卡补办", "status": "待补材料" }],
+    "expected_keywords": ["社保卡"]
+  },
+  {
+    "id": "house",
+    "tags": ["关注事项：公积金"],
+    "matters": [{ "matter": "公积金提取", "status": "审核中" }],
+    "expected_keywords": ["公积金"]
+  },
+  {
+    "id": "bid",
+    "tags": ["用户类型：企业"],
+    "matters": [{ "matter": "投标保证金退还", "status": "已受理" }],
+    "expected_keywords": ["保证金"]
+  },
+  {
+    "id": "residence",
+    "tags": ["所在区域：天宁区"],
+    "matters": [{ "matter": "居住证办理", "status": "待预约" }],
+    "expected_keywords": ["居住证"]
+  },
+  {
+    "id": "newborn",
+    "tags": ["家庭成员：新生儿"],
+    "matters": [{ "matter": "新生儿落户", "status": "办理中" }],
+    "expected_keywords": ["落户"]
+  },
+  {
+    "id": "ca",
+    "tags": ["用户类型：企业"],
+    "matters": [{ "matter": "CA 证书办理", "status": "待领取" }],
+    "expected_keywords": ["CA"]
+  },
+  {
+    "id": "disability",
+    "tags": ["关注事项：残疾人补贴"],
+    "matters": [],
+    "expected_keywords": ["残疾人补贴"]
+  },
+  {
+    "id": "no_data",
+    "tags": [],
+    "matters": [],
+    "expected_keywords": []
+  },
+  {
+    "id": "duplicate",
+    "tags": ["所在区域：天宁区"],
+    "matters": [
+      { "matter": "营业执照", "status": "受理中" },
+      { "matter": "营业执照", "status": "受理中" }
+    ],
+    "expected_keywords": ["营业执照"]
+  }
+]

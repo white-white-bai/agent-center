@@ -50,6 +50,18 @@ async def test_model_summary_is_used_when_available(db_session) -> None:
     assert summary == "模型生成的摘要"
 
 
+async def test_model_summary_is_truncated(db_session) -> None:
+    from app.integrations.llm.router import ModelRouter
+
+    conversation = await _seed_long_conversation(db_session)
+    router = ModelRouter(Client('{"summary":"' + "摘" * 2000 + '"}'))
+
+    summary = await summarizer.summarize_conversation(db_session, CTX, conversation, router=router)
+
+    assert summary is not None
+    assert len(summary) == 800
+
+
 async def test_model_summary_falls_back_to_rules_on_failure(db_session) -> None:
     from app.integrations.llm.router import ModelRouter
 

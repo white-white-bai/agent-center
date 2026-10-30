@@ -107,6 +107,11 @@ docker compose up -d --build
 | `AC_DIFY_PAGE_SIZE` | `100` | Dify 文档/分段分页大小 |
 | `AC_DIFY_CHATFLOW_API_KEY` | 空 | Dify Chatflow 应用 API Key |
 | `AC_DIFY_CHATFLOW_TIMEOUT_MS` | `30000` | Chatflow 调用超时（毫秒） |
+| `AC_SUMMARY_MAX_CHARS` | `800` | 会话摘要最大字符数 |
+| `AC_SUMMARY_PROMPT_MAX_CHARS` | `300` | 模型摘要提示的目标字数 |
+| `AC_SUGGESTION_MAX_ITEMS` | `3` | 主动建议最大条数 |
+| `AC_SUGGESTION_ITEM_MAX_CHARS` | `120` | 单条建议最大字符数 |
+| `AC_SUGGESTION_SUMMARY_MAX_CHARS` | `200` | 建议摘要最大字符数 |
 
 审核请求/响应字段可通过 `AC_MODERATION_TEXT_FIELD`、`AC_MODERATION_STAGE_FIELD`、`AC_MODERATION_BLOCKED_FIELD`、`AC_MODERATION_REASON_FIELD`、`AC_MODERATION_CATEGORY_FIELD` 覆盖，默认 `text / stage / blocked / reason / category`。
 

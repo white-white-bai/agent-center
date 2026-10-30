@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     dify_page_size: int = 100
     dify_chatflow_api_key: str = ""
     dify_chatflow_timeout_ms: int = 30000
+    summary_max_chars: int = 800
+    summary_prompt_max_chars: int = 300
+    suggestion_max_items: int = 3
+    suggestion_item_max_chars: int = 120
+    suggestion_summary_max_chars: int = 200
     stub_reply: str = '{"type":"final","answer":"这是桩模型的回复"}'
 
 

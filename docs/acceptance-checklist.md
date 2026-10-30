@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，317 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，321 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -51,7 +51,7 @@
 | C2 | 管理后台前端（Vue3） | 已确认本期只交付 API |
 | C3 | 灾备 RPO 24h / RTO 4h | **本地演练通过**：MySQL 41 表恢复 19.81s、Redis 16385 keys、端到端 RTO≈26s；生产定时/异地/加密待落地，见 `docs/dr-drill-report.md` |
 | C4 | Critic 评审 Agent、独立 PlanExecutor | **已完成**：Critic 高风险复核 + 独立 PlanExecutor（只读计划、失败回填、写操作拦截） |
-| C5 | 主动推荐质量与摘要长度校准 | 已实现模型生成 + 规则兜底，未评测 |
+| C5 | 主动推荐质量与摘要长度校准 | **部分通过**：长度/去重/降级校验与离线校准完成；真实样本与模型质量评测待做，见 `docs/c5-calibration-report.md` |
 | C6 | MCP stdio / SSE 传输 | **已完成**：HTTP/SSE/stdio 三种传输、`/admin/tools/import-mcp` 导入、执行器接线与审计 |
 
 ## 五、试点出口准则
@@ -126,7 +126,7 @@ Prometheus 指标与 Span 联动看板已完成：
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 317 passed
+- 自动化测试：`python -m pytest -q` → 321 passed
 - 观测栈：Prometheus target up，Exemplar `trace_id` 可在 Tempo 查到 Trace，Grafana 数据源/看板加载，详见 `docs/observability-runtime-report.md`
 - 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
@@ -135,6 +135,7 @@ Prometheus 指标与 Span 联动看板已完成：
 - DDL：全新库执行 41 表，`AC_AUTO_CREATE_TABLES=false` 启动并通过 CRUD/SSE 冒烟，详见 `docs/ddl-smoke-report.md`
 - SSE：会话级长连接、心跳、Last-Event-ID 续传、租户隔离测试通过，详见 `docs/sse-integration-report.md`
 - Dify：文档/分段分页导入、chatflow 工具、断点幂等、同步执行接口与检索命中自动化通过，详见 `docs/dify-migration-report.md`
+- C5：推荐去重/长度校验、摘要截断与离线校准完成，10 个构造用例关键词命中 100%，详见 `docs/c5-calibration-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）

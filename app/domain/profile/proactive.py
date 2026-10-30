@@ -16,16 +16,42 @@ SUGGESTION_PROMPT = """你是政务服务助手。根据用户画像与在办事
 """
 
 
-def _rule_suggestions(tags: list[str], matters: list[dict]) -> dict:
-    suggestions = []
-    for matter in matters[:3]:
+def normalize_suggestions(
+    items: list[object], *, max_items: int, max_chars: int
+) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        text = text[:max_chars].rstrip()
+        if text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+        if len(normalized) >= max_items:
+            break
+    return normalized
+
+
+def _rule_suggestions(
+    tags: list[str],
+    matters: list[dict],
+    *,
+    max_items: int = 3,
+    max_chars: int = 120,
+) -> dict:
+    suggestions: list[str] = []
+    for matter in matters[:max_items]:
         name = matter.get("matter") or matter.get("name")
         status = matter.get("status")
         if name:
             suggestions.append(f"你的「{name}」当前状态：{status or '处理中'}，可随时查询进度。")
     if not suggestions and tags:
         suggestions.append(f"根据你的偏好（{'、'.join(tags[:3])}），可为你推荐相关办事指南。")
-    return {"suggestions": suggestions[:3], "summary": "、".join(suggestions[:1])}
+    suggestions = normalize_suggestions(suggestions, max_items=max_items, max_chars=max_chars)
+    return {"suggestions": suggestions, "summary": suggestions[0] if suggestions else ""}
 
 
 async def generate_suggestions(
@@ -43,6 +69,7 @@ async def generate_suggestions(
     tags = [f"{tag.tag_key}：{tag.tag_value}" for tag in tags_result.scalars().all()]
     matters = await get_active_matters(session, ctx)
 
+    settings = get_settings()
     if router is not None and (tags or matters):
         try:
             request = LLMRequest(
@@ -55,23 +82,32 @@ async def generate_suggestions(
                         ),
                     )
                 ],
-                model=model or get_settings().llm_model,
+                model=model or settings.llm_model,
                 response_format={"type": "json_object"},
             )
             response = await router.complete(
                 session, ctx, request, primary_model=request.model, max_retries=0
             )
             payload = json.loads(response.content)
-            suggestions = [str(item) for item in payload.get("suggestions") or []][:3]
+            raw = payload.get("suggestions")
+            suggestions = normalize_suggestions(
+                raw if isinstance(raw, list) else [],
+                max_items=settings.suggestion_max_items,
+                max_chars=settings.suggestion_item_max_chars,
+            )
             if suggestions:
-                return {
-                    "suggestions": suggestions,
-                    "summary": payload.get("summary") or suggestions[0],
-                    "source": "model",
-                }
+                summary = str(payload.get("summary") or "").strip()
+                summary = summary[: settings.suggestion_summary_max_chars] or suggestions[0]
+                return {"suggestions": suggestions, "summary": summary, "source": "model"}
         except Exception:  # noqa: BLE001 - 模型生成失败回退规则
             pass
 
-    fallback = _rule_suggestions(tags, matters)
+    fallback = _rule_suggestions(
+        tags,
+        matters,
+        max_items=settings.suggestion_max_items,
+        max_chars=settings.suggestion_item_max_chars,
+    )
+    fallback["summary"] = fallback["summary"][: settings.suggestion_summary_max_chars]
     fallback["source"] = "rule"
     return fallback

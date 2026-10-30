@@ -50,6 +50,24 @@ async def test_suggestions_use_model_output(async_client, db_session) -> None:
     assert data["suggestions"] == ["建议一", "建议二"]
 
 
+async def test_suggestions_are_normalized(async_client, db_session) -> None:
+    await _seed_profile(async_client, db_session)
+    app.dependency_overrides[get_model_router] = lambda: ModelRouter(
+        Client(
+            '{"suggestions":["重复建议","重复建议","  ","' + "长" * 200 + '"],'
+            '"summary":"' + "摘要" * 200 + '"}'
+        )
+    )
+
+    data = (await async_client.get("/api/v1/profile/suggestions", headers=HEADERS)).json()["data"]
+
+    assert data["source"] == "model"
+    assert len(data["suggestions"]) == 2
+    assert data["suggestions"][0] == "重复建议"
+    assert len(data["suggestions"][1]) <= 120
+    assert len(data["summary"]) <= 200
+
+
 async def test_suggestions_fall_back_to_rules(async_client, db_session) -> None:
     await _seed_profile(async_client, db_session)
     app.dependency_overrides[get_model_router] = lambda: ModelRouter(Client("", fail=True))
