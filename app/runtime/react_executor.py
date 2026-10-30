@@ -828,7 +828,8 @@ class ReActExecutor:
                 output_summary=summary,
             )
         )
-        await self.session.commit()
+        # 由后续 checkpoint/finish 统一提交，减少单请求事务次数。
+        await self.session.flush()
 
     async def _finish(self, ctx: TenantContext, run_ctx: RunContext, result: RuntimeResult) -> None:
         from app.domain.session.models import Run

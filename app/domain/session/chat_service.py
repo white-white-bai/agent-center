@@ -167,8 +167,7 @@ async def _stream_message_locked(
         started_at=datetime.utcnow(),
     )
     session.add(turn)
-    await session.commit()
-    await session.refresh(turn)
+    await session.flush()
 
     user_message = Message(
         tenant_id=ctx.tenant_id,
@@ -179,8 +178,7 @@ async def _stream_message_locked(
         client_message_id=client_message_id,
     )
     session.add(user_message)
-    await session.commit()
-    await session.refresh(user_message)
+    await session.flush()
     turn.user_message_id = user_message.id
 
     run_id = f"run_{uuid4().hex}"
@@ -411,8 +409,6 @@ async def _stream_message_locked(
         yield await emit("message.end", {"runId": run_id, "finishReason": "failed"})
 
     turn.ended_at = datetime.utcnow()
-    await session.commit()
-
     if event_buffer:
         from app.domain.session.events import RunEvent
 
@@ -428,7 +424,7 @@ async def _stream_message_locked(
                 for item in event_buffer
             ]
         )
-        await session.commit()
+    await session.commit()
 
     try:
         from app.domain.session.summarizer import should_compress, summarize_conversation
@@ -471,8 +467,7 @@ async def _save_assistant(
         token_count=len(content),
     )
     session.add(message)
-    await session.commit()
-    await session.refresh(message)
+    await session.flush()
     turn.assistant_message_id = message.id
     await session.commit()
     return message
