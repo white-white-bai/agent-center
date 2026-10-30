@@ -264,6 +264,7 @@ class ReActExecutor:
             fallback_model=fallback,
             max_retries=int(model_policy.get("max_retries", 1)),
             run_id=run_ctx.run_id,
+            commit_usage=False,
         )
         await self._record_step(ctx, run_ctx, step_no, "MODEL_RESPONSE", response.content[:2000])
         await self._emit({"event": "thinking", "data": {"step": step_no, "summary": "模型已完成本轮推理"}})
@@ -275,9 +276,12 @@ class ReActExecutor:
             token_output=state.get("token_output", 0) + response.token_output,
             tool_calls=state.get("tool_calls", 0),
         )
-        await self._save_checkpoint(run_ctx, step_no, preview)
-
         decision = parse_decision(response.content)
+        if isinstance(
+            decision,
+            (ToolCallDecision, FanoutDecision, PlanDecision, SlotsDecision, TopicDecision),
+        ):
+            await self._save_checkpoint(run_ctx, step_no, preview)
         return {
             **state,
             "step": step_no,

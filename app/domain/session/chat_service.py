@@ -475,7 +475,7 @@ async def _save_assistant(
     session.add(message)
     await session.flush()
     turn.assistant_message_id = message.id
-    await session.commit()
+    # 与本轮 turn/事件/记忆在最终提交中一起持久化。
     return message
 
 

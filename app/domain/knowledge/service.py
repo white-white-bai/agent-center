@@ -388,6 +388,8 @@ async def search(
     resolved_space_ids = await _resolve_space_ids(
         session, ctx, query=query, domain_code=domain_code, space_ids=space_ids
     )
+    if resolved_space_ids == []:
+        return []
     query_stmt = select(KnowledgeChunk, KnowledgeDocument).join(
         KnowledgeDocument, KnowledgeDocument.id == KnowledgeChunk.document_id
     ).where(
@@ -407,6 +409,8 @@ async def search(
         )
 
     rows = (await session.execute(query_stmt)).all()
+    if not rows:
+        return []
     tokens = _ngrams(query)
 
     vector_hits: dict[str, float] = {}

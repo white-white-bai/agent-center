@@ -148,6 +148,7 @@ async def review_answer(
                 fallback_model=fallback,
                 max_retries=0,
                 run_id=run_ctx.run_id,
+                commit_usage=False,
             )
         except Exception as exc:  # noqa: BLE001 - 复核失败按策略降级
             logger.warning("Critic 复核失败: %s", exc)

@@ -31,6 +31,7 @@ class ModelRouter:
         max_retries: int = 1,
         run_id: str | None = None,
         prompt_version_id: int | None = None,
+        commit_usage: bool = True,
     ) -> LLMResponse:
         candidates = [primary_model] + ([fallback_model] if fallback_model else [])
         last_error: Exception | None = None
@@ -77,6 +78,7 @@ class ModelRouter:
                             latency_ms=int((time.perf_counter() - started) * 1000),
                             run_id=run_id,
                             prompt_version_id=prompt_version_id,
+                            commit=commit_usage,
                         )
                         continue
                     current.set_attribute("gen_ai.response.model", response.model)
@@ -101,6 +103,7 @@ class ModelRouter:
                         token_output=response.token_output,
                         run_id=run_id,
                         prompt_version_id=prompt_version_id,
+                        commit=commit_usage,
                     )
                     if model != primary_model:
                         logger.info("模型降级生效: %s -> %s", primary_model, model)
@@ -119,6 +122,7 @@ class ModelRouter:
         token_output: int = 0,
         run_id: str | None,
         prompt_version_id: int | None,
+        commit: bool = True,
     ) -> None:
         session.add(
             ModelUsageLog(
@@ -132,4 +136,7 @@ class ModelRouter:
                 status=status,
             )
         )
-        await session.commit()
+        if commit or status != "SUCCESS":
+            await session.commit()
+        else:
+            await session.flush()
