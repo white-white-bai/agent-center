@@ -28,6 +28,7 @@ from app.runtime.decisions import (
     FanoutDecision,
     FinalDecision,
     HandoffDecision,
+    PlanDecision,
     SlotsDecision,
     ToolCallDecision,
     TopicDecision,
@@ -39,7 +40,7 @@ SYSTEM_TEMPLATE = """你是{role}。
 目标：{goal}
 约束：{constraints}
 
-你只能输出 JSON，格式五选一：
+你只能输出 JSON，格式如下：
 1. 调用工具：{{"type":"tool_call","tool":"工具编码","arguments":{{...}}}}
 2. 最终回答：{{"type":"final","answer":"回答内容"}}
 3. 澄清追问：{{"type":"clarify","question":"追问内容"}}
@@ -47,7 +48,9 @@ SYSTEM_TEMPLATE = """你是{role}。
 5. 交接其他 Agent：{{"type":"handoff","to":"目标 Agent 编码","reason":"原因"}}
 6. 话题切换/恢复：{{"type":"topic","action":"switch","topic":"新话题"}} 或 {{"type":"topic","action":"resume"}}
 7. 并行只读工具：{{"type":"fanout","tasks":[{{"tool":"工具编码","arguments":{{}}}}, ...]}}
-8. 记录槽位后继续：当用户提供了必填槽位值时，先记录再继续处理。
+8. 多步计划（仅只读工具）：{{"type":"plan","steps":[{{"tool":"工具编码","arguments":{{}}}}, ...]}}
+写操作必须使用 tool_call 单独发起并等待用户确认，不得放入 plan 或 fanout。
+当用户提供了必填槽位值时，先记录再继续处理。
 可用工具：{tools}
 必填槽位：{required_slots}
 当前会话状态：{session_state}
@@ -335,6 +338,9 @@ class ReActExecutor:
         if kind == "fanout":
             return await self._act_fanout(ctx, run_ctx, state, decision, step_no)
 
+        if kind == "plan":
+            return await self._act_plan(ctx, run_ctx, state, decision, step_no)
+
         if kind == "handoff":
             return await self._act_handoff(ctx, run_ctx, state, decision, step_no)
 
@@ -612,6 +618,44 @@ class ReActExecutor:
             "tool_codes": list(state.get("tool_codes", [])) + [tool_code],
         }
 
+    async def _act_plan(
+        self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
+    ) -> GraphState:
+        from app.runtime.plan_executor import PlanExecutor
+
+        steps = decision.get("steps") or []
+        outcome = await PlanExecutor(
+            self.session, ctx, self.tool_executor, run_ctx, on_event=self._emit
+        ).execute(steps)
+        await self._record_step(
+            ctx,
+            run_ctx,
+            step_no,
+            "PLAN_EXECUTOR",
+            json.dumps(
+                [
+                    {
+                        "tool": item.tool_code,
+                        "status": item.status,
+                        "errorCode": item.error_code,
+                    }
+                    for item in outcome.steps
+                ],
+                ensure_ascii=False,
+            )[:2000],
+            status="SUCCESS" if outcome.ok else "FAILED",
+        )
+        messages = state["messages"] + [
+            {"role": "user", "content": outcome.to_observations()}
+        ]
+        return {
+            **state,
+            "messages": messages,
+            "tool_calls": state.get("tool_calls", 0) + len(outcome.steps),
+            "tool_codes": list(state.get("tool_codes", []))
+            + [item.tool_code for item in outcome.steps],
+        }
+
     async def _act_handoff(
         self, ctx: TenantContext, run_ctx: RunContext, state: GraphState, decision: dict, step_no: int
     ) -> GraphState:
@@ -679,6 +723,8 @@ class ReActExecutor:
             return {"type": "topic", "action": decision.action, "topic": decision.topic}
         if isinstance(decision, FanoutDecision):
             return {"type": "fanout", "tasks": decision.tasks}
+        if isinstance(decision, PlanDecision):
+            return {"type": "plan", "steps": decision.steps}
         if isinstance(decision, HandoffDecision):
             return {
                 "type": "handoff",

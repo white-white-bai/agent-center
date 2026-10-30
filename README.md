@@ -135,6 +135,26 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 看板包含 QPS、5xx 比例、HTTP/模型 P95、Tool 调用、Run 状态、Token 速率；HTTP 与模型延迟图上的 Exemplar 点可直接跳转到 Tempo 中对应 Trace。overlay 会自动把 `AC_OTEL_ENDPOINT` 指向 `http://tempo:4318/v1/traces`。
 
+## 计划执行（PlanExecutor）
+
+模型可在一次决策中给出多步只读工具计划，由独立的 `PlanExecutor` 顺序执行：
+
+```json
+{
+  "type": "plan",
+  "steps": [
+    { "tool": "policy.search", "arguments": { "query": "营业执照" } },
+    { "tool": "matter.detail", "arguments": { "code": "license" } }
+  ]
+}
+```
+
+- 仅允许 Agent 已绑定的只读工具；未授权工具、禁用工具、写工具均拒绝执行
+- 写操作必须使用 `tool_call` 单独发起并等待确认，不得放入 `plan`（或 `fanout`）
+- 单计划最多 8 步；单步失败不终止后续步骤，失败信息会明确回填给模型
+- 工具结果以 `<plan_results untrusted="true">` 回填，降低工具输出注入风险
+- Run 中记录 `PLAN_EXECUTOR` 步骤，SSE 输出 `tool.call` / `tool.result` 事件
+
 ## 回答复核（Critic）
 
 Agent 版本可通过 `critic_policy` 开启高风险回答复核：

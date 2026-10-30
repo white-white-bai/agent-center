@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，294 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，301 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -50,7 +50,7 @@
 | C1 | 转人工工作台对接（D10） | 已确认暂不实现，仅返回兜底话术 |
 | C2 | 管理后台前端（Vue3） | 已确认本期只交付 API |
 | C3 | 灾备 RPO 24h / RTO 4h | 目标已确认，未落地演练 |
-| C4 | Critic 评审 Agent、独立 PlanExecutor | Critic 已完成；独立 PlanExecutor 未实现 |
+| C4 | Critic 评审 Agent、独立 PlanExecutor | **已完成**：Critic 高风险复核 + 独立 PlanExecutor（只读计划、失败回填、写操作拦截） |
 | C5 | 主动推荐质量与摘要长度校准 | 已实现模型生成 + 规则兜底，未评测 |
 | C6 | MCP stdio / SSE 传输 | **已完成**：HTTP/SSE/stdio 三种传输、`/admin/tools/import-mcp` 导入、执行器接线与审计 |
 
@@ -103,12 +103,18 @@ OTel Span 已完成：
 - 纯 ASGI 中间件使 HTTP Span 覆盖 SSE 流式响应全过程；Run/Model/Tool Span 共享同一 trace
 - 关键属性：租户、run、agent、模型、token、工具状态、HTTP 状态与 `error.code`
 
+PlanExecutor 已完成：
+- `plan` 决策：最多 8 步只读工具，顺序执行，单步失败不终止后续步骤
+- 未授权/禁用/写工具全部拒绝；写操作必须走 `tool_call` 确认
+- 工具结果以不可信观察回填，Run 记录 `PLAN_EXECUTOR`，SSE 输出 `tool.call` / `tool.result`
+- 新增决策解析与运行时集成测试
+
 Critic 复核已完成：
 - Agent 版本配置 `critic_policy`：`risk/always` 触发、风险词可配、`on_error` 可配
 - 复核输出 `pass / revise / reject`，改写替换回答、拒绝返回安全兜底
 - 复核携带本次知识片段，禁止片段外政策依据；失败默认放行不阻塞主链路
 - 记录 `CRITIC_REVIEW` 步骤、`critic.review` Span，token 计入 Run
-- 新增单测与集成测试，覆盖改写、拒绝、低风险跳过、非法输出降级，测试总数 294
+- 新增单测与集成测试，覆盖改写、拒绝、低风险跳过、非法输出降级
 
 Prometheus 指标与 Span 联动看板已完成：
 - `/metrics` 暴露 OpenMetrics：HTTP QPS/延迟/状态、Run、模型延迟与 Token、Tool 调用
@@ -120,7 +126,7 @@ Prometheus 指标与 Span 联动看板已完成：
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 294 passed
+- 自动化测试：`python -m pytest -q` → 301 passed
 - 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy

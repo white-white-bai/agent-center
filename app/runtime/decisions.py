@@ -47,6 +47,11 @@ class FanoutDecision:
     tasks: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class PlanDecision:
+    steps: list[dict[str, Any]] = field(default_factory=list)
+
+
 Decision = (
     ToolCallDecision
     | FinalDecision
@@ -55,6 +60,7 @@ Decision = (
     | HandoffDecision
     | TopicDecision
     | FanoutDecision
+    | PlanDecision
 )
 
 
@@ -98,6 +104,18 @@ def parse_decision(content: str) -> Decision:
             if not isinstance(item, dict) or not item.get("tool"):
                 raise ValidationError("并行任务缺少 tool 字段")
         return FanoutDecision(tasks=tasks)
+    if decision_type == "plan":
+        steps = payload.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValidationError("计划决策缺少 steps 列表")
+        if len(steps) > 8:
+            raise ValidationError("计划步骤不能超过 8 步")
+        for item in steps:
+            if not isinstance(item, dict) or not item.get("tool"):
+                raise ValidationError("计划步骤缺少 tool 字段")
+            if not isinstance(item.get("arguments", {}), dict):
+                raise ValidationError("计划步骤 arguments 必须是对象")
+        return PlanDecision(steps=steps)
     if decision_type == "handoff":
         target = payload.get("to")
         if not target:
