@@ -201,6 +201,7 @@ X-Trace-Id: trace_xxx
 | --- | --- |
 | 会话 | `POST /api/v1/chat/sessions`、`GET /api/v1/chat/sessions/{id}` |
 | 对话 | `POST /api/v1/chat/sessions/{id}/messages`（SSE）、`POST .../interrupt` |
+| SSE 长连接 | `GET /api/v1/chat/sessions/{id}/stream?lastEventId=&timeoutSeconds=&heartbeatSeconds=` |
 | 确认 | `POST /api/v1/chat/sessions/{id}/confirmations/{cid}` |
 | 轨迹 | `GET /api/v1/chat/sessions/{id}/runs/{runId}`、`.../events?lastEventId=`、`.../stream?lastEventId=` |
 | 会话管理 | `GET /api/v1/admin/sessions`（用户/状态/时间/分页） |

@@ -25,6 +25,103 @@ async def get_run_admin(run_id: str, session: DbSession, ctx: AdminContext) -> d
     return ok({"run": run_service.serialize_run(run), "steps": [run_service.serialize_step(s) for s in steps]})
 
 
+@router.get("/chat/sessions/{session_id}/stream")
+async def stream_session_events(
+    session_id: int,
+    session: DbSession,
+    ctx: CurrentTenant,
+    lastEventId: str | None = None,
+    timeoutSeconds: float | None = None,
+    heartbeatSeconds: float | None = None,
+    pollSeconds: float = 1.0,
+):
+    """会话级长连接：心跳保活，按 Last-Event-ID 续传已落库事件。
+
+    当前事件在 Run 结束后落库，本接口用于长连接保活与断线补偿；
+    实时 token 流仍使用单 Run 的消息接口。
+    """
+    import asyncio
+    import time
+
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy import select as sa_select
+
+    from app.core.config import get_settings
+    from app.domain.session import event_service, service
+    from app.domain.session.events import RunEvent
+    from app.domain.session.models import Run
+
+    await service.get_conversation(session, ctx, session_id)
+    settings = get_settings()
+    heartbeat = heartbeatSeconds or settings.sse_heartbeat_seconds
+    poll = max(pollSeconds, 0.2)
+    timeout = timeoutSeconds
+    run_id, _, seq_text = (lastEventId or "").rpartition(":")
+    after_id = 0
+    if run_id and seq_text.isdigit():
+        row = await session.execute(
+            sa_select(RunEvent.id)
+            .join(Run, Run.id == RunEvent.run_id)
+            .where(
+                RunEvent.tenant_id == ctx.tenant_id,
+                Run.conversation_id == session_id,
+                RunEvent.run_id == run_id,
+                RunEvent.seq == int(seq_text),
+            )
+        )
+        after_id = row.scalar_one_or_none() or 0
+    await session.rollback()
+
+    async def _generate():
+        nonlocal after_id
+        started = time.monotonic()
+        last_beat = started
+        yield event_service.format_sse(
+            {"id": "session:ready", "event": "stream.ready", "data": {"sessionId": session_id}}
+        )
+        while True:
+            if timeout is not None and time.monotonic() - started >= timeout:
+                yield event_service.format_sse(
+                    {"id": "session:end", "event": "stream.end", "data": {"reason": "timeout"}}
+                )
+                return
+            rows = await session.execute(
+                sa_select(RunEvent)
+                .join(Run, Run.id == RunEvent.run_id)
+                .where(
+                    RunEvent.tenant_id == ctx.tenant_id,
+                    Run.conversation_id == session_id,
+                    RunEvent.id > after_id,
+                )
+                .order_by(RunEvent.id.asc())
+                .limit(200)
+            )
+            rows = list(rows.scalars().all())
+            event_ids = [event.id for event in rows]
+            serialized = [event_service.serialize_event(event) for event in rows]
+            await session.rollback()
+            for event_id, event in zip(event_ids, serialized):
+                after_id = event_id
+                yield event_service.format_sse(event)
+            now = time.monotonic()
+            if heartbeat > 0 and now - last_beat >= heartbeat:
+                yield event_service.format_sse(
+                    {
+                        "id": f"session:heartbeat:{int(now * 1000)}",
+                        "event": "heartbeat",
+                        "data": {"ts": datetime.utcnow().isoformat()},
+                    }
+                )
+                last_beat = now
+            await asyncio.sleep(poll)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("/chat/sessions/{session_id}/runs/{run_id}/events")
 async def replay_run_events(
     session_id: int,
