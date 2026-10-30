@@ -105,6 +105,8 @@ docker compose up -d --build
 | `AC_DIFY_API_KEY` | 空 | Dify Dataset API Key |
 | `AC_DIFY_TIMEOUT_MS` | `15000` | Dify 请求超时（毫秒） |
 | `AC_DIFY_PAGE_SIZE` | `100` | Dify 文档/分段分页大小 |
+| `AC_DIFY_CHATFLOW_API_KEY` | 空 | Dify Chatflow 应用 API Key |
+| `AC_DIFY_CHATFLOW_TIMEOUT_MS` | `30000` | Chatflow 调用超时（毫秒） |
 
 审核请求/响应字段可通过 `AC_MODERATION_TEXT_FIELD`、`AC_MODERATION_STAGE_FIELD`、`AC_MODERATION_BLOCKED_FIELD`、`AC_MODERATION_REASON_FIELD`、`AC_MODERATION_CATEGORY_FIELD` 覆盖，默认 `text / stage / blocked / reason / category`。
 
@@ -213,7 +215,7 @@ X-Trace-Id: trace_xxx
 | 反馈 | `POST /api/v1/feedback` |
 | Agent | `GET/POST /api/v1/admin/agents`、`.../{id}/versions`、`.../{id}/publish`、`.../{id}/bindings` |
 | 提示词 | `POST /api/v1/admin/prompts`、`.../{id}/versions`、`.../transition` |
-| 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、`POST .../import-mcp`、凭证管理 |
+| 工具 | `POST /api/v1/admin/tools`、`POST .../{code}/test`、`POST .../import-openapi`、`POST .../import-mcp`、`POST .../import-dify-chatflow`、凭证管理 |
 | 知识 | `POST /api/v1/admin/knowledge-spaces`、`.../documents`、`.../publish`、`POST /api/v1/knowledge/search` |
 | 知识同步 | `POST /api/v1/admin/knowledge-sync-tasks`、`POST .../{id}/run`（支持 `sourceType=DIFY`） |
 | 知识版本 | `POST /api/v1/admin/knowledge-documents/{id}/versions`、`.../unpublish` |

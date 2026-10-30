@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     dify_api_key: str = ""
     dify_timeout_ms: int = 15000
     dify_page_size: int = 100
+    dify_chatflow_api_key: str = ""
+    dify_chatflow_timeout_ms: int = 30000
     stub_reply: str = '{"type":"final","answer":"这是桩模型的回复"}'
 
 

@@ -19,8 +19,10 @@ from app.api.v1 import (
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import install_exception_handlers, install_trace_middleware
+from app.integrations.dify import register_dify_tool
 
 configure_logging()
+register_dify_tool()
 
 
 @asynccontextmanager

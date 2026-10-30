@@ -6,6 +6,11 @@
 
 ## 一、已完成
 
+- 新增 Dify Chatflow 工具 `dify.chatflow.invoke`
+  - `POST /api/v1/admin/tools/import-dify-chatflow` 一键注册工具定义
+  - 调用 `/v1/chat-messages`（blocking），返回 `answer / conversationId / messageId / metadata`
+  - 配置：`AC_DIFY_CHATFLOW_API_KEY`、`AC_DIFY_CHATFLOW_TIMEOUT_MS`
+  - 工具入参：`query`（必填）、`inputs`、`conversation_id`、`user`
 - 新增 `dify_fetcher`：按 dataset_id 拉取 Dify 文档与分段，转换为知识库文档
   - 文档编码：`dify:{dataset_id}:{document_id}`
   - 标题：Dify 文档名称；内容：分段按顺序拼接
@@ -43,7 +48,9 @@ curl -X POST http://127.0.0.1:8000/api/v1/admin/knowledge-sync-tasks/1/run \
 ```bash
 .venv\Scripts\python -m pytest -q \
   tests/unit/test_dify_fetcher.py \
-  tests/integration/test_dify_sync.py
+  tests/unit/test_dify_chatflow.py \
+  tests/integration/test_dify_sync.py \
+  tests/integration/test_dify_chatflow_tool.py
 ```
 
 覆盖：
@@ -53,11 +60,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/admin/knowledge-sync-tasks/1/run \
 - Authorization Header
 - 同步任务执行、checkpoint、重复执行幂等
 - 导入后知识检索命中
+- Chatflow 请求字段、鉴权、响应映射、HTTP 错误
+- 工具一键导入、重复导入跳过、工具调用执行
 
 ## 四、真实试点待办（A3）
 
 1. 提供 Dify 地址、Dataset API Key、1–2 个试点 dataset（50+ 文档）。
 2. 抽样 30 题核对引用准确率 ≥ 90%；本仓库暂无真实业务问答集。
 3. 验证同步失败重试与断点续跑（可用网络故障注入）。
-4. Dify chatflow 作为工具（`dify.chatflow.invoke`）尚未接入；当前只完成知识库迁移。
+4. Chatflow 工具已接入，但真实应用 API Key、输入变量与调用配额仍需现场验证。
 5. 迁移期间双写/灰度策略与回滚方案需结合现网 chatflow 评估。

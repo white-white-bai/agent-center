@@ -73,6 +73,34 @@ def _mcp_config(payload: ImportMCPRequest) -> dict:
     return config
 
 
+@router.post("/import-dify-chatflow")
+async def import_dify_chatflow(session: DbSession, ctx: CurrentTenant) -> dict:
+    from app.integrations.dify import CHATFLOW_INPUT_SCHEMA, CHATFLOW_TOOL_CODE
+
+    existing = await service.find_tool(session, ctx, CHATFLOW_TOOL_CODE)
+    if existing is not None:
+        return ok({"created": False, "toolCode": CHATFLOW_TOOL_CODE})
+    await service.create_tool(
+        session,
+        ctx,
+        tool_code=CHATFLOW_TOOL_CODE,
+        name="Dify Chatflow",
+        description="调用 Dify Chatflow 应用",
+        source_type="FUNCTION",
+        input_schema=CHATFLOW_INPUT_SCHEMA,
+    )
+    from app.domain.evaluation import audit
+
+    await audit.record_audit(
+        session,
+        ctx,
+        action="tool.import_dify_chatflow",
+        resource_type="tool",
+        resource_id=CHATFLOW_TOOL_CODE,
+    )
+    return ok({"created": True, "toolCode": CHATFLOW_TOOL_CODE})
+
+
 @router.post("/import-mcp")
 async def import_mcp(payload: ImportMCPRequest, session: DbSession, ctx: CurrentTenant) -> dict:
     import asyncio
