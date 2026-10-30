@@ -1,0 +1,3 @@
+# /etc/cron.d/agent-center-backup
+# 每日 02:00 全量备份，保留 7 天；密钥文件权限应为 0400，仅备份账号可读。
+0 2 * * * root cd /opt/agent-center && .venv/bin/python scripts/dr_backup.py --output /backup/agent-center --retention-days 7 --require-encryption --key-file /etc/agent-center/backup.key >> /var/log/agent-center-backup.log 2>&1

@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，324 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，328 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -49,7 +49,7 @@
 | --- | --- | --- |
 | C1 | 转人工工作台对接（D10） | 已确认暂不实现，仅返回兜底话术 |
 | C2 | 管理后台前端（Vue3） | 已确认本期只交付 API |
-| C3 | 灾备 RPO 24h / RTO 4h | **本地演练通过**：MySQL 41 表恢复 19.81s、Redis 16385 keys、端到端 RTO≈26s；生产定时/异地/加密待落地，见 `docs/dr-drill-report.md` |
+| C3 | 灾备 RPO 24h / RTO 4h | **本地增强通过**：AES-256-GCM 加密备份/校验/7 天保留/定时模板完成，加密恢复 38.76s、41 表，错误密钥拒绝；生产定时、异地/对象存储、binlog 待落地，见 `docs/dr-drill-report.md` |
 | C4 | Critic 评审 Agent、独立 PlanExecutor | **已完成**：Critic 高风险复核 + 独立 PlanExecutor（只读计划、失败回填、写操作拦截） |
 | C5 | 主动推荐质量与摘要长度校准 | **部分通过**：长度/去重/降级校验与离线校准完成；真实样本与模型质量评测待做，见 `docs/c5-calibration-report.md` |
 | C6 | MCP stdio / SSE 传输 | **已完成**：HTTP/SSE/stdio 三种传输、`/admin/tools/import-mcp` 导入、执行器接线与审计 |
@@ -122,17 +122,17 @@ Prometheus 指标与 Span 联动看板已完成：
 - HTTP 指标使用完整路由模板，避免 session/run ID 造成标签爆炸
 - `docker-compose.observability.yml` 提供 Prometheus + Tempo + Grafana，预置「Agent Center 总览」看板
 
-剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、独立 PlanExecutor）。
+剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备生产化）。
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 324 passed
+- 自动化测试：`python -m pytest -q` → 328 passed
 - 观测栈：Prometheus target up，Exemplar `trace_id` 可在 Tempo 查到 Trace，Grafana 数据源/看板加载，详见 `docs/observability-runtime-report.md`
 - 压测：三轮优化后单请求 0.284s→0.153s；2000/200 桩模型 0–0.15% 错误，TTFT P95 6.3–6.6s、E2E P95 9.6–10.7s（单节点仍未达标），详见 `docs/load-test-report.md`
 - 真实模型双节点：40/20 零错误、40 次真实调用全成功，TTFT P95 6.22s、E2E P95 6.25s，详见 `docs/real-model-multinode-report.md`
 - SSE 断线续流：断开于 seq 2，续流从 seq 3 开始，3 条事件无缺失/重复；网关下游重启后重连成功，详见 `docs/a5-sse-reconnect-report.md`
 - 上下文/LangGraph 剖析：检索早退后上下文装配 ~11ms、LangGraph 构图 ~8ms，节点无低风险优化空间，详见 `docs/context-langgraph-profile.md`
-- 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
+- 灾备：加密备份恢复 38.76s、41 表；7 天保留与 cron/计划任务模板；错误密钥拒绝，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
 - DDL：全新库执行 41 表，`AC_AUTO_CREATE_TABLES=false` 启动并通过 CRUD/SSE 冒烟，详见 `docs/ddl-smoke-report.md`
