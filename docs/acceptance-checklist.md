@@ -21,7 +21,7 @@
 | A2 | 审核服务联调 | **部分通过**：协议/鉴权/字段映射完成，输入输出各 20 条与失败拒绝自动化通过；真实服务待联调，见 `docs/moderation-integration-report.md` | 审核客户端、联调记录 | 输入/输出各 20 条用例拦截正确；审核服务不可用时按策略拒绝且返回兜底话术，不输出未审内容 |
 | A3 | Dify/knowflow 迁移试点 | **部分通过**：Dify 文档/分段导入、chatflow 工具、断点重试与执行接口完成并自动化验证；真实 dataset/30 题评测待做，见 `docs/dify-migration-report.md` | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
 | A4 | 生产建表与 MySQL 冒烟 | **本地通过**：DDL 41 表、关闭自动建表、CRUD/SSE 冒烟通过；生产 DBA 执行待做，见 `docs/ddl-smoke-report.md` | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
-| A5 | 前端与 SSE 联调 | **部分通过**：新增会话级长连接/心跳/Last-Event-ID 续传并通过自动化；30 分钟真实网关与前端联调待做，见 `docs/sse-integration-report.md` | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
+| A5 | 前端与 SSE 联调 | **本地通过**：nginx 网关 30 分钟实测 1800.94s、119 心跳、最大间隔 15.07s、无断连；生产网关/前端与断网重连演练待做，见 `docs/a5-sse-gateway-report.md` | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
 | A6 | 性能压测 | **部分通过**：2000/200 桩模型 0% 错误；单节点 TTFT P95 8.48s、E2E P95 12.78s 未达标，见 `docs/load-test-report.md` | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
 | A7 | Redis/Milvus 生产形态 | **本地通过**：2 副本锁/限流验证 + 独立 Milvus 检索与重启持久化；生产集群/对象存储/调优待做，见 `docs/multi-instance-check-report.md`、`docs/milvus-standalone-report.md` | 多实例部署记录 | 2 个 app 副本下会话锁互斥、限流计数共享；独立 Milvus 检索结果与 Lite 一致；重启后数据不丢 |
 | A8 | 安全专项测试 | **自动化通过**：8 类用例全部正确拦截，报告见 `docs/security-test-report.md`；外部渗透测试待做 | 安全测试报告 | 跨租户读取、越权工具、伪造确认、重复写操作、敏感信息入记忆、删除后检索、提示词注入绕过 8 类用例全部不通过（即被正确拦截） |
@@ -134,6 +134,7 @@ Prometheus 指标与 Span 联动看板已完成：
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
 - DDL：全新库执行 41 表，`AC_AUTO_CREATE_TABLES=false` 启动并通过 CRUD/SSE 冒烟，详见 `docs/ddl-smoke-report.md`
 - SSE：会话级长连接、心跳、Last-Event-ID 续传、租户隔离测试通过，详见 `docs/sse-integration-report.md`
+- A5 网关：nginx 30 分钟保持 1800.94s、119 心跳、最大间隔 15.07s、200 无断连，详见 `docs/a5-sse-gateway-report.md`
 - Dify：文档/分段分页导入、chatflow 工具、断点幂等、同步执行接口与检索命中自动化通过，详见 `docs/dify-migration-report.md`
 - C5：推荐去重/长度校验、摘要截断与离线校准完成，10 个构造用例关键词命中 100%，详见 `docs/c5-calibration-report.md`
 - 独立 Milvus：standalone 健康、collection 写入、Lite 对照命中、重启后实体保留，详见 `docs/milvus-standalone-report.md`

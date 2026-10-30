@@ -152,6 +152,15 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 本地联动已验证：Prometheus target up、Exemplar `trace_id` 可在 Tempo 查询、Grafana 自动加载数据源与看板，见 [docs/observability-runtime-report.md](docs/observability-runtime-report.md)。
 
+可选 SSE 网关（nginx，关闭缓冲、1900s 读超时）：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+  --profile gateway up -d gateway
+```
+
+30 分钟长连接测试结果见 [docs/a5-sse-gateway-report.md](docs/a5-sse-gateway-report.md)。
+
 ## 计划执行（PlanExecutor）
 
 模型可在一次决策中给出多步只读工具计划，由独立的 `PlanExecutor` 顺序执行：
