@@ -110,6 +110,26 @@ AC_OTEL_SAMPLE_RATIO=1.0
 - 未配置 endpoint 时不导出；采集器不可用只影响导出，不影响业务
 - 采样比例通过 `AC_OTEL_SAMPLE_RATIO` 控制，生产建议 0.01–0.1
 
+运行时指标通过 `/metrics` 暴露（OpenMetrics，含 `trace_id` Exemplar）：
+
+```bash
+curl -s http://127.0.0.1:8000/metrics | head
+```
+
+一键启动 Prometheus + Tempo + Grafana（预置「Agent Center 总览」看板）：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+```
+
+| 服务 | 地址 | 说明 |
+| --- | --- | --- |
+| Grafana | http://localhost:3000 | `admin/admin`，看板「Agent Center 总览」 |
+| Prometheus | http://localhost:9090 | 抓取 `app:8000/metrics` |
+| Tempo | http://localhost:3200 | OTLP HTTP 接收端 `:4318` |
+
+看板包含 QPS、5xx 比例、HTTP/模型 P95、Tool 调用、Run 状态、Token 速率；HTTP 与模型延迟图上的 Exemplar 点可直接跳转到 Tempo 中对应 Trace。overlay 会自动把 `AC_OTEL_ENDPOINT` 指向 `http://tempo:4318/v1/traces`。
+
 ## 身份与租户
 
 请求头（由可信网关注入）：

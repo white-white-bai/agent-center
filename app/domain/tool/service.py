@@ -5,7 +5,7 @@ import jsonschema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import telemetry
+from app.core import metrics, telemetry
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.tenant import TenantContext
 from app.domain.tool import idempotency
@@ -213,6 +213,12 @@ async def invoke_tool(
             telemetry.mark_error(
                 current, result.error_code or "AC.TOOL.FAILED", result.error_message
             )
+        metrics.observe_tool(
+            tool_code,
+            result.status,
+            result.duration_ms / 1000,
+            trace_id=telemetry.current_trace_id(),
+        )
     await resilience.record(limiter_key, success=result.ok)
 
     from app.core.redaction import redact

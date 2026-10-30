@@ -60,3 +60,13 @@ app.include_router(notifications.router, prefix="/api/v1")
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics_endpoint():
+    from fastapi.responses import Response
+
+    from app.core.metrics import render_metrics
+
+    payload, content_type = render_metrics()
+    return Response(content=payload, media_type=content_type)

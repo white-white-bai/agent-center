@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import telemetry
+from app.core import metrics, telemetry
 from app.core.exceptions import ModelUnavailableError
 from app.core.tenant import TenantContext
 from app.domain.model.models import ModelUsageLog
@@ -53,18 +53,27 @@ class ModelRouter:
                         )
                     except (asyncio.TimeoutError, ModelUnavailable) as exc:
                         last_error = exc
+                        status = (
+                            "TIMEOUT" if isinstance(exc, asyncio.TimeoutError) else "FAILED"
+                        )
                         code = (
                             "AC.LLM.TIMEOUT"
                             if isinstance(exc, asyncio.TimeoutError)
                             else "AC.LLM.UNAVAILABLE"
                         )
                         telemetry.mark_error(current, code, str(exc))
+                        metrics.observe_model(
+                            model,
+                            status,
+                            time.perf_counter() - started,
+                            trace_id=telemetry.current_trace_id(),
+                        )
                         logger.warning("model %s 调用失败（第 %d 次）: %s", model, attempt + 1, exc)
                         await self._log_usage(
                             session,
                             ctx,
                             model=model,
-                            status="TIMEOUT" if isinstance(exc, asyncio.TimeoutError) else "FAILED",
+                            status=status,
                             latency_ms=int((time.perf_counter() - started) * 1000),
                             run_id=run_id,
                             prompt_version_id=prompt_version_id,
@@ -74,6 +83,14 @@ class ModelRouter:
                     current.set_attribute("gen_ai.usage.input_tokens", response.token_input)
                     current.set_attribute("gen_ai.usage.output_tokens", response.token_output)
                     current.set_attribute("gen_ai.response.finish_reason", response.finish_reason)
+                    metrics.observe_model(
+                        response.model,
+                        "SUCCESS",
+                        time.perf_counter() - started,
+                        token_input=response.token_input,
+                        token_output=response.token_output,
+                        trace_id=telemetry.current_trace_id(),
+                    )
                     await self._log_usage(
                         session,
                         ctx,

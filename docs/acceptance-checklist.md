@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，271 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，275 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -11,7 +11,7 @@
 | 后端主线（M0–M4） | 部分通过 | 功能完整度约 80%，可支撑单场景试点 |
 | 生产上线 | 未通过 | 模型、审核、迁移、压测、前端联调、生产存储形态均未验证 |
 | 安全与合规 | 部分通过 | 租户隔离、鉴权、加密、脱敏已实现；审核与提示词注入专项评测未做 |
-| 可观测与运维 | 部分通过 | 有 Prometheus 指标、告警推送、OTel Span；缺生产 Collector 部署与告警演练 |
+| 可观测与运维 | 部分通过 | 有 Prometheus 指标、告警推送、OTel Span、Grafana 看板；缺生产环境 Collector/看板部署与告警演练 |
 
 ## 二、P0：试点前必须完成
 
@@ -102,15 +102,22 @@ OTel Span 已完成：
 - 四层 Span：`http.request` → `agent.run` → `model.complete` / `tool.execute`
 - 纯 ASGI 中间件使 HTTP Span 覆盖 SSE 流式响应全过程；Run/Model/Tool Span 共享同一 trace
 - 关键属性：租户、run、agent、模型、token、工具状态、HTTP 状态与 `error.code`
-- 新增 Span 单测与集成测试，测试总数 271
+
+Prometheus 指标与 Span 联动看板已完成：
+- `/metrics` 暴露 OpenMetrics：HTTP QPS/延迟/状态、Run、模型延迟与 Token、Tool 调用
+- 指标 Exemplar 携带 `trace_id`，Prometheus 数据源映射到 Tempo，点击 Exemplar 直达 Trace
+- HTTP 指标使用完整路由模板，避免 session/run ID 造成标签爆炸
+- `docker-compose.observability.yml` 提供 Prometheus + Tempo + Grafana，预置「Agent Center 总览」看板
+- 测试总数 275
 
 剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、Critic）。
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 271 passed
+- 自动化测试：`python -m pytest -q` → 275 passed
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
 - OTel：临时容器开启 OTLP/HTTP，宿主假 Collector 收到 2 批 Span（约 1.3KB/批）
+- 指标：`/metrics` 输出 OpenMetrics，含路由模板与 `trace_id` Exemplar；observability compose 校验通过
 - 建表：容器内 MySQL `agent_center` 共 41 张表（已实测）
 - 设计偏差与待确认项：`docs/open-questions.md`

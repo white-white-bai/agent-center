@@ -1,4 +1,5 @@
 import logging
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -6,7 +7,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.core import telemetry
+from app.core import metrics, telemetry
 from app.core.exceptions import AppError
 from app.core.responses import fail
 from app.core.tenant import reset_current_tenant, set_current_tenant
@@ -38,6 +39,28 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
 
 
+def _join_route_path(raw_path: str, route_path: str) -> str:
+    """把嵌套路由的相对模板与真实路径前缀拼成完整模板。"""
+    raw_parts = [part for part in raw_path.strip("/").split("/") if part]
+    route_parts = [part for part in route_path.strip("/").split("/") if part]
+    if not route_parts:
+        return "/"
+    for offset in range(len(raw_parts) - len(route_parts) + 1):
+        window = raw_parts[offset : offset + len(route_parts)]
+        if all("{" in template or template == actual for template, actual in zip(route_parts, window)):
+            return "/" + "/".join(raw_parts[:offset] + route_parts)
+    return route_path
+
+
+def _metric_route(scope: Scope, status_code: int) -> str:
+    route_path = getattr(scope.get("route"), "path", None)
+    if route_path:
+        return _join_route_path(scope.get("path") or "", route_path)
+    if status_code == 404:
+        return "unmatched"
+    return scope.get("path") or "unknown"
+
+
 class TraceMiddleware:
     """纯 ASGI 中间件，Span 覆盖到流式响应结束。"""
 
@@ -54,6 +77,7 @@ class TraceMiddleware:
         set_trace_id(incoming)
         tenant_token = set_current_tenant(headers.get("x-tenant-id"))
         status_code = 500
+        started = time.perf_counter()
         attributes = {
             "http.request.method": scope.get("method"),
             "url.path": scope.get("path"),
@@ -80,6 +104,15 @@ class TraceMiddleware:
                 current.set_attribute("http.response.status_code", status_code)
                 if status_code >= 500:
                     telemetry.mark_error(current, "HTTP_5XX", str(status_code))
+                metric_route = _metric_route(scope, status_code)
+                if metric_route != "/metrics":
+                    metrics.observe_http(
+                        method=scope.get("method") or "UNKNOWN",
+                        route=metric_route,
+                        status=status_code,
+                        duration_seconds=time.perf_counter() - started,
+                        trace_id=telemetry.current_trace_id(),
+                    )
                 reset_current_tenant(tenant_token)
 
 

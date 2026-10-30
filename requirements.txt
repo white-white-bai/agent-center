@@ -14,6 +14,7 @@ cryptography==50.0.2
 opentelemetry-api==1.45.2
 opentelemetry-sdk==1.45.2
 opentelemetry-exporter-otlp-proto-http==1.45.1
+prometheus-client==0.26.0
 
 # 可选：生产集成（MySQL / Redis / Milvus）
 aiomysql==0.3.2
