@@ -245,6 +245,16 @@ python scripts/load_test.py --base-url http://127.0.0.1:8001 --sessions 2000 --c
 
 多 worker 部署示例：`WEB_CONCURRENCY=6`，同时设置 `AC_AUTO_CREATE_TABLES=false`；按 `副本数 × (AC_DB_POOL_SIZE + AC_DB_MAX_OVERFLOW) < MySQL max_connections × 0.8` 预留连接。
 
+灾备演练（MySQL 全量 + Redis RDB + Milvus Lite）：
+
+```bash
+python scripts/dr_backup.py --output backups
+python scripts/dr_restore.py --backup backups/mysql_<ts>.sql \
+  --target-db agent_center_drill --drop-existing
+```
+
+最近一次演练见 [docs/dr-drill-report.md](docs/dr-drill-report.md)。
+
 MCP 工具接入支持 `http`、`sse`、`stdio` 三种传输，导入后可像普通工具一样绑定到 Agent：
 
 ```bash

@@ -49,7 +49,7 @@
 | --- | --- | --- |
 | C1 | 转人工工作台对接（D10） | 已确认暂不实现，仅返回兜底话术 |
 | C2 | 管理后台前端（Vue3） | 已确认本期只交付 API |
-| C3 | 灾备 RPO 24h / RTO 4h | 目标已确认，未落地演练 |
+| C3 | 灾备 RPO 24h / RTO 4h | **本地演练通过**：MySQL 41 表恢复 19.81s、Redis 16385 keys、端到端 RTO≈26s；生产定时/异地/加密待落地，见 `docs/dr-drill-report.md` |
 | C4 | Critic 评审 Agent、独立 PlanExecutor | **已完成**：Critic 高风险复核 + 独立 PlanExecutor（只读计划、失败回填、写操作拦截） |
 | C5 | 主动推荐质量与摘要长度校准 | 已实现模型生成 + 规则兜底，未评测 |
 | C6 | MCP stdio / SSE 传输 | **已完成**：HTTP/SSE/stdio 三种传输、`/admin/tools/import-mcp` 导入、执行器接线与审计 |
@@ -128,6 +128,7 @@ Prometheus 指标与 Span 联动看板已完成：
 
 - 自动化测试：`python -m pytest -q` → 301 passed
 - 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
+- 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
