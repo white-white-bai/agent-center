@@ -59,6 +59,6 @@ python scripts/sse_gateway_hold.py \
 ## 四、说明与残余风险
 
 - 本轮为本地 nginx，不是生产 API Gateway/LB；生产网关仍需按同样参数（关闭缓冲、读超时 ≥300s、HTTP/1.1）配置并复测。
-- 断线 `Last-Event-ID` 续传已由 `tests/integration/test_session_stream.py` 与单 Run 续流测试覆盖；本轮未在 30 分钟内注入网络断开。
-- 未测试移动网络切换、网关滚动重启、多副本负载均衡下的长连接粘性。
+- 断线 `Last-Event-ID` 续传已由 `tests/integration/test_session_stream.py` 与单 Run 续流测试覆盖；另见 `docs/a5-sse-reconnect-report.md`：已注入主动断开并从 seq 2 续到 3，无缺失/重复，网关下游重启后重连成功。
+- 未测试移动网络切换、多副本负载均衡下的长连接粘性；生产网关仍需复测。
 - 会话级流当前轮询数据库，长连接数量很大时需改为 Redis Stream/推送。
