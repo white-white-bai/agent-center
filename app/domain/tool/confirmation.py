@@ -47,6 +47,7 @@ async def decide(
     confirmation_id: str,
     decision: str,
     arguments: dict | None = None,
+    conversation_id: int | None = None,
 ) -> tuple[ToolConfirmation, bool]:
     """返回确认记录以及是否允许执行。
 
@@ -62,6 +63,8 @@ async def decide(
     )
     confirmation = result.scalar_one_or_none()
     if confirmation is None:
+        raise NotFoundError("确认记录不存在")
+    if conversation_id is not None and confirmation.conversation_id != conversation_id:
         raise NotFoundError("确认记录不存在")
 
     if confirmation.status in {"CONFIRMED", "REJECTED"}:

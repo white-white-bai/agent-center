@@ -210,7 +210,7 @@ docker cp scripts/e2e_sample.py agent-center-app:/tmp/e2e_sample.py
 docker compose exec -T app python /tmp/e2e_sample.py
 ```
 
-最近一次结果见 [docs/e2e-sample-report.md](docs/e2e-sample-report.md)。
+最近一次结果见 [docs/e2e-sample-report.md](docs/e2e-sample-report.md)，安全专项见 [docs/security-test-report.md](docs/security-test-report.md)。
 
 MCP 工具接入支持 `http`、`sse`、`stdio` 三种传输，导入后可像普通工具一样绑定到 Agent：
 

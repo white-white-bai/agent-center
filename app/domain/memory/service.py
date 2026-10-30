@@ -8,8 +8,8 @@ from app.core.exceptions import NotFoundError
 from app.core.tenant import TenantContext
 from app.domain.memory.models import MemoryEmbedding, MemoryEpisode, MemoryItem
 
-ID_CARD_PATTERN = re.compile(r"\b\d{17}[\dXx]\b")
-PHONE_PATTERN = re.compile(r"\b1\d{10}\b")
+ID_CARD_PATTERN = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
+PHONE_PATTERN = re.compile(r"(?<!\d)1\d{10}(?!\d)")
 SECRET_KEYWORDS = re.compile(r"密码|口令|password|验证码|银行卡|信用卡")
 
 MEMORY_TYPES = {"WORKING", "EPISODIC", "SEMANTIC", "PROCEDURAL"}
@@ -111,7 +111,10 @@ async def add_episode(
     conversation_id: int | None,
     summary: str,
     event: dict | None = None,
-) -> MemoryEpisode:
+) -> MemoryEpisode | None:
+    """情节记忆同样不得落库敏感信息，命中时直接跳过。"""
+    if contains_sensitive(summary):
+        return None
     episode = MemoryEpisode(
         tenant_id=ctx.tenant_id,
         user_id=ctx.user_id,

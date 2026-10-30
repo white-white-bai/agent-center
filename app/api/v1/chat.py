@@ -172,6 +172,7 @@ async def decide_confirmation(
         confirmation_id=confirmation_id,
         decision=payload.decision,
         arguments=payload.arguments,
+        conversation_id=session_id,
     )
     execution = None
     if executable:

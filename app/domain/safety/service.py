@@ -1,8 +1,17 @@
+import re
 from dataclasses import dataclass
 
 import httpx
 
 from app.core.config import get_settings
+
+PROMPT_INJECTION_PATTERN = re.compile(
+    r"(忽略|无视|忘记|跳过).{0,10}(之前|以上|上面|所有|前面|系统).{0,10}(指令|提示|规则|设定)"
+    r"|ignore\s+(all\s+)?(previous|above|system)\s+(instructions|prompts|rules)"
+    r"|(system|developer)\s*prompt|系统提示词|系统提示|开发者模式|越狱模式|jailbreak"
+    r"|你现在(是|扮演).{0,12}(不受限制|无限制|开发者)",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -41,6 +50,13 @@ class SafetyService:
         self._transport = transport
 
     def check_local(self, text: str, stage: str) -> SafetyResult:
+        if stage == "input" and PROMPT_INJECTION_PATTERN.search(text):
+            return SafetyResult(
+                allowed=False,
+                stage=stage,
+                reason="检测到提示词注入或系统提示套取尝试",
+                category="PROMPT_INJECTION",
+            )
         for word in self.words:
             if word and word in text:
                 return SafetyResult(
