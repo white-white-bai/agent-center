@@ -268,6 +268,15 @@ python scripts/multi_instance_check.py --base-a http://127.0.0.1:8010 --base-b h
 
 最近一次结果见 [docs/multi-instance-check-report.md](docs/multi-instance-check-report.md)。
 
+生产 DDL 冒烟（全新库 + 关闭自动建表）：
+
+```bash
+docker exec -i agent-center-mysql mysql -uagent -pagent_pass agent_center_ddl < docs/schema-mysql.sql
+python scripts/ddl_smoke.py --base-url http://127.0.0.1:8012
+```
+
+最近一次结果见 [docs/ddl-smoke-report.md](docs/ddl-smoke-report.md)。
+
 MCP 工具接入支持 `http`、`sse`、`stdio` 三种传输，导入后可像普通工具一样绑定到 Agent：
 
 ```bash

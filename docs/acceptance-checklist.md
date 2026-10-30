@@ -20,7 +20,7 @@
 | A1 | 真实模型联调 | 仅桩模型 | 联调报告、样例集、`model_usage_log` 截图 | 50 条真实问题中决策 JSON 解析成功率 ≥ 98%；流式首 token 正常；工具调用与降级模型各验证 10 次 |
 | A2 | 审核服务联调 | **部分通过**：协议/鉴权/字段映射完成，输入输出各 20 条与失败拒绝自动化通过；真实服务待联调，见 `docs/moderation-integration-report.md` | 审核客户端、联调记录 | 输入/输出各 20 条用例拦截正确；审核服务不可用时按策略拒绝且返回兜底话术，不输出未审内容 |
 | A3 | Dify/knowflow 迁移试点 | 仅有通用同步任务 | 试点空间、迁移清单、评测集 | 选 1–2 个知识库、50+ 文档；抽样 30 题引用准确率 ≥ 90%；同步失败可重试恢复 |
-| A4 | 生产建表与 MySQL 冒烟 | 已导出 DDL，未由 DBA 执行 | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
+| A4 | 生产建表与 MySQL 冒烟 | **本地通过**：DDL 41 表、关闭自动建表、CRUD/SSE 冒烟通过；生产 DBA 执行待做，见 `docs/ddl-smoke-report.md` | `docs/schema-mysql.sql` 执行记录 | DBA 执行后表数 41；`AC_AUTO_CREATE_TABLES=false` 启动，CRUD/SSE 冒烟通过 |
 | A5 | 前端与 SSE 联调 | 无前端，仅 API | 联调记录、网关配置 | 单连接保持 ≥ 30 分钟不断；断线用 `lastEventId` 重放无丢事件、无重复；网关缓冲关闭、超时 ≥ 300s |
 | A6 | 性能压测 | **部分通过**：2000/200 桩模型 0% 错误；单节点 TTFT P95 8.48s、E2E P95 12.78s 未达标，见 `docs/load-test-report.md` | 压测方案与报告 | 2000 活跃会话；首 token P95 ≤ 2s、端到端 P95 ≤ 8s（含 1–2 次工具调用）；错误率 < 1%；SSE 重连成功率 ≥ 99% |
 | A7 | Redis/Milvus 生产形态 | **部分通过**：2 副本会话锁/限流/跨实例读取通过，并修复旧快照并发 bug；独立 Milvus 未验证，见 `docs/multi-instance-check-report.md` | 多实例部署记录 | 2 个 app 副本下会话锁互斥、限流计数共享；独立 Milvus 检索结果与 Lite 一致；重启后数据不丢 |
@@ -131,6 +131,7 @@ Prometheus 指标与 Span 联动看板已完成：
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
+- DDL：全新库执行 41 表，`AC_AUTO_CREATE_TABLES=false` 启动并通过 CRUD/SSE 冒烟，详见 `docs/ddl-smoke-report.md`
 - 安全专项：`pytest tests/security` 8 类全部拦截，详见 `docs/security-test-report.md`
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
