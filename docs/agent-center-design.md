@@ -284,6 +284,8 @@ Agent 组织为 **域（Domain）**：区级客服域、边聊边办域、公共
 | Fan-out / Reduce | 并行调用多个 Agent 或工具，汇总结果 | 复杂查询、多区对比 |
 | Critic 复核 | 高风险回答由评审 Agent 校验后再输出 | 政策解读、金额相关 |
 
+Critic 以 Agent 版本配置 `critic_policy` 开启：按风险词或全量触发，评审模型只依据本次检索到的知识片段判断，输出 `pass / revise / reject`；改写或拒绝不影响主链路，复核失败按 `on_error` 策略降级。
+
 **协作契约**：
 
 - 共享黑板：Session Context（会话状态、槽位、画像摘要、已用工具结果）只读共享，写入需仲裁。

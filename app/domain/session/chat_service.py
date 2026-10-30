@@ -256,6 +256,10 @@ async def _stream_message_locked(
         token_budget=token_budget,
         timeout_ms=int(model_policy.get("timeout_ms", settings.llm_timeout_ms)),
         system_prompt=system_prompt,
+        knowledge_context="\n".join(
+            f"{item['title']}（{item.get('section') or '正文'}）：{item['content']}"
+            for item in knowledge_results
+        )[:4000],
     )
     executor = ReActExecutor(
         session,

@@ -130,6 +130,28 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 看板包含 QPS、5xx 比例、HTTP/模型 P95、Tool 调用、Run 状态、Token 速率；HTTP 与模型延迟图上的 Exemplar 点可直接跳转到 Tempo 中对应 Trace。overlay 会自动把 `AC_OTEL_ENDPOINT` 指向 `http://tempo:4318/v1/traces`。
 
+## 回答复核（Critic）
+
+Agent 版本可通过 `critic_policy` 开启高风险回答复核：
+
+```json
+{
+  "critic_policy": {
+    "enabled": true,
+    "mode": "risk",
+    "risk_keywords": ["补贴", "金额", "比例", "时限", "收费"],
+    "timeout_ms": 15000,
+    "on_error": "pass"
+  }
+}
+```
+
+- `mode=risk` 仅在问题或回答命中风险词时复核；`always` 全量复核
+- 复核模型返回 `pass / revise / reject`：`revise` 使用改写回答，`reject` 返回安全兜底话术
+- 复核时会把本次检索到的知识片段一并传入，要求模型不得引用片段外政策依据
+- `on_error=pass` 表示复核模型不可用或输出无法解析时放行，不阻塞对话；`reject` 则返回兜底
+- 复核调用计入 token，Run 中记录 `CRITIC_REVIEW` 步骤，并产生 `critic.review` Span
+
 ## 身份与租户
 
 请求头（由可信网关注入）：

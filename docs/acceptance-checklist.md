@@ -2,7 +2,7 @@
 
 > 基线：《智能体中台概要设计 v0.3》《详细设计说明书 V1.0》
 > 判定口径：**通过** / **部分通过** / **未通过**；每项必须给出可复现的证据。
-> 当前版本：后端主线已完成，275 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
+> 当前版本：后端主线已完成，285 项自动化测试通过；Docker 本地栈（app + MySQL + Redis + 内嵌 Milvus Lite）已验证。
 
 ## 一、总体判定
 
@@ -50,7 +50,7 @@
 | C1 | 转人工工作台对接（D10） | 已确认暂不实现，仅返回兜底话术 |
 | C2 | 管理后台前端（Vue3） | 已确认本期只交付 API |
 | C3 | 灾备 RPO 24h / RTO 4h | 目标已确认，未落地演练 |
-| C4 | Critic 评审 Agent、独立 PlanExecutor | 设计提及，未实现 |
+| C4 | Critic 评审 Agent、独立 PlanExecutor | Critic 已完成；独立 PlanExecutor 未实现 |
 | C5 | 主动推荐质量与摘要长度校准 | 已实现模型生成 + 规则兜底，未评测 |
 | C6 | MCP stdio / SSE 传输 | **已完成**：HTTP/SSE/stdio 三种传输、`/admin/tools/import-mcp` 导入、执行器接线与审计 |
 
@@ -103,21 +103,28 @@ OTel Span 已完成：
 - 纯 ASGI 中间件使 HTTP Span 覆盖 SSE 流式响应全过程；Run/Model/Tool Span 共享同一 trace
 - 关键属性：租户、run、agent、模型、token、工具状态、HTTP 状态与 `error.code`
 
+Critic 复核已完成：
+- Agent 版本配置 `critic_policy`：`risk/always` 触发、风险词可配、`on_error` 可配
+- 复核输出 `pass / revise / reject`，改写替换回答、拒绝返回安全兜底
+- 复核携带本次知识片段，禁止片段外政策依据；失败默认放行不阻塞主链路
+- 记录 `CRITIC_REVIEW` 步骤、`critic.review` Span，token 计入 Run
+- 新增单测与集成测试，覆盖改写、拒绝、低风险跳过、非法输出降级
+
 Prometheus 指标与 Span 联动看板已完成：
 - `/metrics` 暴露 OpenMetrics：HTTP QPS/延迟/状态、Run、模型延迟与 Token、Tool 调用
 - 指标 Exemplar 携带 `trace_id`，Prometheus 数据源映射到 Tempo，点击 Exemplar 直达 Trace
 - HTTP 指标使用完整路由模板，避免 session/run ID 造成标签爆炸
 - `docker-compose.observability.yml` 提供 Prometheus + Tempo + Grafana，预置「Agent Center 总览」看板
-- 测试总数 275
 
-剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、Critic）。
+剩余工作集中在 P0 外部依赖项（审核/Dify/压测/前端/DBA）与 P2（转人工、前端、灾备、独立 PlanExecutor）。
 
 ## 七、当前可用证据
 
-- 自动化测试：`python -m pytest -q` → 275 passed
+- 自动化测试：`python -m pytest -q` → 285 passed
 - Docker 栈：`docker compose ps` → app/mysql/redis 均 healthy
 - 端到端：知识入库 → 发布 → 向量检索返回引用（已实测）
 - OTel：临时容器开启 OTLP/HTTP，宿主假 Collector 收到 2 批 Span（约 1.3KB/批）
 - 指标：`/metrics` 输出 OpenMetrics，含路由模板与 `trace_id` Exemplar；observability compose 校验通过
+- Critic：真实模型冒烟通过，Run 步骤为 `MODEL_RESPONSE → FINAL_RESPONSE → CRITIC_REVIEW(revise)`，回答被改写，用量 771/1086
 - 建表：容器内 MySQL `agent_center` 共 41 张表（已实测）
 - 设计偏差与待确认项：`docs/open-questions.md`

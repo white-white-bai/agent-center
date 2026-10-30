@@ -18,6 +18,7 @@ class RunContext:
     token_budget: int = 32000
     timeout_ms: int = 30000
     system_prompt: str | None = None
+    knowledge_context: str = ""
 
 
 @dataclass

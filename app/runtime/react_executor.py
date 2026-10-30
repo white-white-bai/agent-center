@@ -292,7 +292,32 @@ class ReActExecutor:
         if kind == "final":
             answer = decision.get("answer") or ""
             await self._record_step(ctx, run_ctx, step_no, "FINAL_RESPONSE", answer[:2000])
-            return {**state, "status": "COMPLETED", "answer": answer}
+            from app.runtime.critic import review_answer
+
+            review = await review_answer(self.session, ctx, self.router, run_ctx, answer)
+            token_input = state.get("token_input", 0) + review.token_input
+            token_output = state.get("token_output", 0) + review.token_output
+            if review.triggered:
+                await self._record_step(
+                    ctx,
+                    run_ctx,
+                    step_no,
+                    "CRITIC_REVIEW",
+                    json.dumps(
+                        {"verdict": review.verdict, "reason": review.reason},
+                        ensure_ascii=False,
+                    )[:2000],
+                    status="SUCCESS" if review.verdict != "reject" else "FAILED",
+                )
+                if review.verdict in {"revise", "reject"}:
+                    answer = review.revised_answer or answer
+            return {
+                **state,
+                "status": "COMPLETED",
+                "answer": answer,
+                "token_input": token_input,
+                "token_output": token_output,
+            }
 
         if kind == "clarify":
             question = decision.get("question") or ""

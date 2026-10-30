@@ -30,6 +30,7 @@ class CreateVersionRequest(BaseModel):
     router_rules: dict = Field(default_factory=dict)
     required_slots: list[str] = Field(default_factory=list)
     slot_questions: dict = Field(default_factory=dict)
+    critic_policy: dict = Field(default_factory=dict)
 
 
 class PublishRequest(BaseModel):
@@ -105,6 +106,7 @@ async def create_version(
         "router_rules": payload.router_rules,
         "required_slots": payload.required_slots,
         "slot_questions": payload.slot_questions,
+        "critic_policy": payload.critic_policy,
     }
     from app.domain.evaluation import audit
 
