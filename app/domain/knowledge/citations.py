@@ -30,6 +30,7 @@ async def record_citations(
     run_id: str,
     results: list[dict],
     message_id: int | None = None,
+    commit: bool = True,
 ) -> list[Citation]:
     citations: list[Citation] = []
     for result in results:
@@ -49,7 +50,10 @@ async def record_citations(
         session.add(citation)
         citations.append(citation)
     if citations:
-        await session.commit()
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
     return citations
 
 

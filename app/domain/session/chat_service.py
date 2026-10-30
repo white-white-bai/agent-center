@@ -314,10 +314,15 @@ async def _stream_message_locked(
                 conversation_id=conversation.id,
                 summary=f"用户：{text[:100]}；助手：{result.answer[:200]}",
                 event={"turnId": turn.id, "agentCode": agent.code, "status": result.status},
+                commit=False,
             )
             if result.tool_codes:
                 await add_procedure(
-                    session, ctx, agent_code=agent.code, tool_codes=result.tool_codes
+                    session,
+                    ctx,
+                    agent_code=agent.code,
+                    tool_codes=result.tool_codes,
+                    commit=False,
                 )
         except Exception:  # noqa: BLE001 - 记忆写入失败不得影响对话
             pass
@@ -344,6 +349,7 @@ async def _stream_message_locked(
                     run_id=run_id,
                     results=knowledge_results,
                     message_id=assistant_message.id,
+                    commit=False,
                 )
             except Exception:  # noqa: BLE001 - 引用落库失败不影响回答
                 pass

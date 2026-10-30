@@ -37,6 +37,7 @@ async def add_memory(
     confidence: float = 0.6,
     importance: float = 0.5,
     ttl_days: int | None = None,
+    commit: bool = True,
 ) -> MemoryItem | None:
     """写入一条记忆。含敏感信息的候选直接丢弃，不阻塞对话。"""
     if memory_type not in MEMORY_TYPES:
@@ -62,8 +63,11 @@ async def add_memory(
         status="ACTIVE",
     )
     session.add(item)
-    await session.commit()
-    await session.refresh(item)
+    if commit:
+        await session.commit()
+        await session.refresh(item)
+    else:
+        await session.flush()
     return item
 
 
@@ -111,6 +115,7 @@ async def add_episode(
     conversation_id: int | None,
     summary: str,
     event: dict | None = None,
+    commit: bool = True,
 ) -> MemoryEpisode | None:
     """情节记忆同样不得落库敏感信息，命中时直接跳过。"""
     if contains_sensitive(summary):
@@ -124,8 +129,11 @@ async def add_episode(
         occurred_at=datetime.utcnow(),
     )
     session.add(episode)
-    await session.commit()
-    await session.refresh(episode)
+    if commit:
+        await session.commit()
+        await session.refresh(episode)
+    else:
+        await session.flush()
     return episode
 
 
@@ -136,6 +144,7 @@ async def add_procedure(
     agent_code: str,
     tool_codes: list[str],
     importance: float = 0.7,
+    commit: bool = True,
 ) -> MemoryItem | None:
     if not tool_codes:
         return None
@@ -148,6 +157,7 @@ async def add_procedure(
         object_value=",".join(tool_codes),
         confidence=0.6,
         importance=importance,
+        commit=commit,
     )
 
 

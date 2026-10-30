@@ -128,7 +128,7 @@ Prometheus 指标与 Span 联动看板已完成：
 
 - 自动化测试：`python -m pytest -q` → 322 passed
 - 观测栈：Prometheus target up，Exemplar `trace_id` 可在 Tempo 查到 Trace，Grafana 数据源/看板加载，详见 `docs/observability-runtime-report.md`
-- 压测：事务合并后 2000/200 桩模型 0.15% 错误，TTFT P95 6.89s、E2E P95 10.48s（单节点仍未达标），详见 `docs/load-test-report.md`
+- 压测：事务合并后 2000/200 桩模型 0.15% 错误，TTFT P95 6.89s、E2E P95 10.48s；进一步合并记忆/引用后 commit 9→8（单节点仍未达标），详见 `docs/load-test-report.md`
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`
 - 审核：输入/输出各 20 条拦截、不可用拒绝、鉴权与字段映射自动化通过，详见 `docs/moderation-integration-report.md`
