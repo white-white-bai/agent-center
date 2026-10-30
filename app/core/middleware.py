@@ -88,6 +88,9 @@ class TraceMiddleware:
         }
 
         with telemetry.span("http.request", attributes) as current:
+            # 在 Span 刚开始时捕获，避免内层框架切换上下文后丢失。
+            trace_id = telemetry.current_trace_id()
+
             async def send_wrapper(message: Message) -> None:
                 nonlocal status_code
                 if message["type"] == "http.response.start":
@@ -111,7 +114,7 @@ class TraceMiddleware:
                         route=metric_route,
                         status=status_code,
                         duration_seconds=time.perf_counter() - started,
-                        trace_id=telemetry.current_trace_id(),
+                        trace_id=trace_id,
                     )
                 reset_current_tenant(tenant_token)
 

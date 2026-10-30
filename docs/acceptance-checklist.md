@@ -11,7 +11,7 @@
 | 后端主线（M0–M4） | 部分通过 | 功能完整度约 80%，可支撑单场景试点 |
 | 生产上线 | 未通过 | 模型、审核、迁移、压测、前端联调、生产存储形态均未验证 |
 | 安全与合规 | 部分通过 | 8 类自动化安全专项全部拦截；外部审核联调与第三方渗透测试待做 |
-| 可观测与运维 | 部分通过 | 有 Prometheus 指标、告警推送、OTel Span、Grafana 看板；缺生产环境 Collector/看板部署与告警演练 |
+| 可观测与运维 | 部分通过 | **本地观测栈联动通过**：Prometheus target up、Exemplar→Tempo Trace、Grafana 看板 10 面板；生产高可用与告警演练待做 |
 
 ## 二、P0：试点前必须完成
 
@@ -127,6 +127,7 @@ Prometheus 指标与 Span 联动看板已完成：
 ## 七、当前可用证据
 
 - 自动化测试：`python -m pytest -q` → 317 passed
+- 观测栈：Prometheus target up，Exemplar `trace_id` 可在 Tempo 查到 Trace，Grafana 数据源/看板加载，详见 `docs/observability-runtime-report.md`
 - 压测：2000 会话/200 并发，6 worker 桩模型 2000/2000 成功、0% 错误；TTFT P95 8.48s、E2E P95 12.78s（单节点未达标），详见 `docs/load-test-report.md`
 - 灾备：MySQL 41 表恢复 19.81s，Redis RDB 16385 keys，端到端 RTO≈26s，详见 `docs/dr-drill-report.md`
 - 多实例：2 副本并发消息串行化（12.71s≈2×6.4s）、限流共享 200→429、turn 1/2 唯一，详见 `docs/multi-instance-check-report.md`

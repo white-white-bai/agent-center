@@ -145,6 +145,8 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 看板包含 QPS、5xx 比例、HTTP/模型 P95、Tool 调用、Run 状态、Token 速率；HTTP 与模型延迟图上的 Exemplar 点可直接跳转到 Tempo 中对应 Trace。overlay 会自动把 `AC_OTEL_ENDPOINT` 指向 `http://tempo:4318/v1/traces`。
 
+本地联动已验证：Prometheus target up、Exemplar `trace_id` 可在 Tempo 查询、Grafana 自动加载数据源与看板，见 [docs/observability-runtime-report.md](docs/observability-runtime-report.md)。
+
 ## 计划执行（PlanExecutor）
 
 模型可在一次决策中给出多步只读工具计划，由独立的 `PlanExecutor` 顺序执行：
